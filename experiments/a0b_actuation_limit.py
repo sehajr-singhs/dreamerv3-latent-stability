@@ -11,15 +11,28 @@ different reasons available:
 Only (ii) is a shortcoming of our method. Conflating them would let us report a
 verifier limitation as a physical law, or worse, a physical law as a finding.
 
-The static bound. Holding the pendulum at angle th requires torque balancing gravity,
-u = m*g*l*sin(th). With |u| <= max_torque this is possible only where
+The static bound, derived from the env's ACTUAL equation of motion rather than from a
+textbook point-mass pendulum. gymnasium integrates
 
-    |sin(th)| <= max_torque / (m*g*l)
+    thddot = (3g / 2l) sin(th) + (3 / m l^2) u
 
-Outside that band the pendulum cannot be held at all: it must fall and be swung back
-up, so V necessarily increases somewhere along the way. This is a NECESSARY condition
-on the region, not a sufficient one; the true basin is smaller still, because it must
-also account for kinetic energy.
+which is a uniform ROD pivoted at one end (I = m l^2 / 3, gravity torque m g (l/2) sin th),
+not a point mass at radius l. Setting thddot = 0 gives the holding torque
+
+    u = -(m g l / 2) sin(th)
+
+so with |u| <= max_torque the pendulum can be held only where
+
+    |sin(th)| <= max_torque / (m g l / 2)
+
+An earlier version of this file used the point-mass balance u = m g l sin(th) and so
+reported a limit of 0.2014 rad, a factor of two too tight. The corrected bound is
+checked below against the closed loop's second fixed point, which A0d locates by Newton
+at exactly the saturation boundary; that agreement is what makes this the right formula
+rather than another plausible one.
+
+This is a NECESSARY condition on the region, not a sufficient one; the true basin is
+smaller still, because it must also account for kinetic energy.
 """
 
 import os
@@ -33,14 +46,16 @@ from src.dynamics import G, M, L, MAX_TORQUE, MAX_SPEED
 
 
 def main():
-    ratio = MAX_TORQUE / (M * G * L)
+    hold_gain = M * G * L / 2.0            # |u| needed per unit sin(th), rod about end
+    ratio = MAX_TORQUE / hold_gain
     th_max = float(np.arcsin(ratio))
 
-    print(f"m*g*l              = {M*G*L:.3f}   (gravity torque at th = 90 deg)")
+    print(f"env EOM            thddot = (3g/2l) sin(th) + (3/m l^2) u   [rod about end]")
+    print(f"holding torque     |u| = (m g l / 2) |sin th| = {hold_gain:.3f} |sin th|")
     print(f"max_torque         = {MAX_TORQUE:.3f}")
     print(f"ratio              = {ratio:.4f}")
     print()
-    print(f"STATIC HOLD LIMIT  |theta| <= {th_max:.4f} rad = {np.degrees(th_max):.2f} deg")
+    print(f"STATIC HOLD LIMIT  |theta| <= {th_max:.6f} rad = {np.degrees(th_max):.2f} deg")
     print()
     print("Beyond that band the actuator cannot balance gravity, so the pendulum must")
     print("fall and be swung back up. No controller admits a monotone Lyapunov function")
@@ -48,14 +63,31 @@ def main():
     print("sufficiently: the true certifiable basin is smaller once velocity is included.")
     print()
 
-    # Where does the swing-up have to happen, in energy terms? Upright energy is the
-    # maximum of the potential, so any state with too little total energy simply cannot
-    # reach upright without the controller adding energy first.
-    print("For reference, the regions A0 sweeps:")
-    for name, half in [("burn_in=10  (approach)", (2.65, 6.75)),
-                       ("burn_in=100 (settled)", (0.143, 0.103))]:
-        verdict = "EXCEEDS static hold limit" if half[0] > th_max else "within static hold limit"
-        print(f"  {name:24s} theta half-width {half[0]:.3f} rad -> {verdict}")
+    # Cross-check against the measured second fixed point, if A0d has been run. The
+    # closed loop's non-attracting fixed point should sit essentially ON this boundary,
+    # since that is where the policy saturates trying to hold.
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "results", "a0d_equilibrium_seed0.json")
+    if os.path.isfile(path):
+        import json
+        d = json.load(open(path))
+        far = d.get("newton_from_upright", {})
+        if far.get("converged"):
+            th_far = far["theta"]
+            print(f"cross-check: A0d's second fixed point sits at theta = {th_far:.6f} rad,")
+            print(f"             against the predicted saturation boundary {th_max:.6f} rad")
+            print(f"             (difference {abs(th_far - th_max):.2e} rad). Agreement here")
+            print("             is what validates the torque balance used above.")
+            print()
+
+    print("For reference, the regions A0 swept (boxes centred on ZERO, which A0d showed")
+    print("is NOT the closed loop's equilibrium):")
+    for name, half in [("burn_in=10  (approach)", 2.65),
+                       ("burn_in=25", 1.95),
+                       ("burn_in=50", 0.172),
+                       ("burn_in=100 (settled)", 0.143)]:
+        verdict = "EXCEEDS hold limit" if half > th_max else "within hold limit"
+        print(f"  {name:24s} theta half-width {half:.3f} rad -> {verdict}")
     print()
     print(f"So only regions with |theta| <~ {th_max:.3f} rad can possibly certify, and a")
     print("failure to fit V outside that band is physics, not a defect in the method.")

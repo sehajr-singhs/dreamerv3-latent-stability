@@ -40,7 +40,8 @@ from src import region as R
 from src.dynamics import ClosedLoop
 from src.lyapunov import DecreaseCondition, ExponentialDecreaseCondition
 from src.policy import extract_sac_actor
-from src.reachability import collect_support
+from src.equilibrium import find_attracting_fixed_point, verify_fixed_point
+from src.reachability import collect_support, wrap
 from src.train_lyapunov import train_V, sampled_violation_rate
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -55,20 +56,32 @@ def main(seed=0, quantile=0.99, hole_frac=0.10, v_steps=2000,
     net = extract_sac_actor(model)
     loop = ClosedLoop(net)
 
+    # The closed loop's fixed point is NOT upright, and every region must be centred on
+    # it. Centring on zero puts the true equilibrium at the box EDGE and cuts the
+    # annulus hole around a point that is not an equilibrium, which guarantees
+    # violations no training can remove. That is what the first sweep measured.
+    eq = find_attracting_fixed_point(ClosedLoop(net).eval(), seed=seed)
+    s_star = eq["s_star"]
+    drift = verify_fixed_point(ClosedLoop(net).eval(), s_star)
+    print(f"closed-loop fixed point s* = ({s_star[0]:+.8f}, {s_star[1]:+.8f}), "
+          f"drift {drift:.2e}  (upright is NOT a fixed point)", flush=True)
+
     support = collect_support(net, n_episodes=n_episodes, horizon=horizon, seed=seed)
-    print(f"full support: {len(support.states)} states, "
-          f"theta p99 {np.round(support.quantile_box(0.99)[0][0],3)} .. "
-          f"{np.round(support.quantile_box(0.99)[1][0],3)}", flush=True)
+    print(f"full support: {len(support.states)} states", flush=True)
 
     rows = []
     for b in burn_ins:
         steady = support.tail(b)
-        lo, hi = steady.quantile_box(quantile)
-        half = np.maximum(np.abs(lo), np.abs(hi))
-        lo, hi = -half, half
+        # half-widths measured as deviations ABOUT s*, with theta wrapped, so the box is
+        # centred on the equilibrium rather than on the origin
+        dev = steady.states - s_star
+        dev[:, 0] = wrap(dev[:, 0])
+        half = np.quantile(np.abs(dev), quantile, axis=0)
+        half = np.maximum(half, 1e-6)
+        lo, hi = s_star - half, s_star + half
         # hole scales with the region, so the annulus keeps its shape as the box moves
         hole = hole_frac * half
-        hole_lo, hole_hi = -hole, hole
+        hole_lo, hole_hi = s_star - hole, s_star + hole
 
         cov_steady = R.describe(lo, hi, steady)["frac_on_policy_states_inside"]
         cov_full = R.describe(lo, hi, support)["frac_on_policy_states_inside"]
@@ -78,14 +91,16 @@ def main(seed=0, quantile=0.99, hole_frac=0.10, v_steps=2000,
 
         for c in cs:
             t0 = time.time()
-            V = train_V(net, steady, lo, hi, hole_lo, hole_hi,
+            V = train_V(net, steady, lo, hi, hole_lo, hole_hi, s_star,
                         steps=v_steps, hidden=hidden, c=c, seed=seed, verbose=False)
             cond = (DecreaseCondition(V, loop) if beta is None
                     else ExponentialDecreaseCondition(V, loop, beta=beta)).eval()
             s = sampled_violation_rate(cond, lo, hi, hole_lo, hole_hi, steady,
                                        n=n_samples, seed=seed + 999)
             row = dict(burn_in=b, c=c, v_steps=v_steps, beta=beta,
+                       s_star=s_star.tolist(),
                        half_width=half.tolist(), hole=hole.tolist(),
+                       lo=lo.tolist(), hi=hi.tolist(),
                        cov_steady=cov_steady, cov_full=cov_full,
                        violation_rate=s["violation_rate"],
                        n_violations=s["n_violations"], n_sampled=s["n_sampled"],
@@ -98,7 +113,7 @@ def main(seed=0, quantile=0.99, hole_frac=0.10, v_steps=2000,
     out = os.path.join(ROOT, "results", f"a0_feasibility_seed{seed}.json")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w") as f:
-        json.dump(dict(config=dict(seed=seed, quantile=quantile, hole_frac=hole_frac,
+        json.dump(dict(s_star=s_star.tolist(), config=dict(seed=seed, quantile=quantile, hole_frac=hole_frac,
                                    v_steps=v_steps, hidden=hidden, beta=beta,
                                    n_samples=n_samples, n_episodes=n_episodes,
                                    horizon=horizon),
@@ -107,7 +122,7 @@ def main(seed=0, quantile=0.99, hole_frac=0.10, v_steps=2000,
 
     best = min(rows, key=lambda r: r["violation_rate"])
     print(f"\nbest: {best['violation_rate']:.5%} at burn_in={best['burn_in']}, "
-          f"c={best['c']}, region +/-{np.round(best['half_width'],4).tolist()}")
+          f"c={best['c']}, half-width {np.round(best['half_width'],4).tolist()} about s*")
     if best["violation_rate"] > 1e-4:
         print("VERDICT: no region here yields clean sampling. A gap CANNOT be claimed. "
               "Report the obstruction (swing-up vs degeneracy) as the result instead.")

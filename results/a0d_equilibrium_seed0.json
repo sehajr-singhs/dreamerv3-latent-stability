@@ -1,0 +1,23 @@
+{
+  "spread_theta": 0.0,
+  "spread_thdot": 4.4408920985006264e-17,
+  "tail_mean": [
+    0.14258597274153242,
+    1.0294279034927794e-18
+  ],
+  "burn": 4000,
+  "keep": 400,
+  "attractor": "fixed_point",
+  "newton_from_upright": {
+    "converged": true,
+    "residual": 0.0,
+    "theta": 0.4112181221687292,
+    "thetadot": -1.7211657685092022e-16
+  },
+  "newton_from_tail_mean": {
+    "converged": true,
+    "residual": 3.4905411894214925e-14,
+    "theta": 0.14258597274153262,
+    "thetadot": 1.0294279034927794e-18
+  }
+}

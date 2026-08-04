@@ -32,7 +32,8 @@ from src import region as R
 from src.dynamics import ClosedLoop
 from src.lyapunov import DecreaseCondition
 from src.policy import extract_sac_actor, check_matches_sb3
-from src.reachability import collect_support, IN_SUPPORT
+from src.equilibrium import find_attracting_fixed_point, verify_fixed_point
+from src.reachability import collect_support, wrap, IN_SUPPORT
 from src.train_lyapunov import train_V, sampled_violation_rate
 from src.verifier import certify_box, provenance
 
@@ -48,7 +49,7 @@ def evaluate_policy_return(model, n_episodes=30):
 
 
 def run(seed=0, n_samples=500_000, v_steps=4000, quantile=0.99,
-        hole=0.05, time_budget=120.0, method="CROWN", min_width=1e-3,
+        hole=0.10, time_budget=120.0, method="CROWN", min_width=1e-3,
         n_episodes=2000, horizon=200, burn_in=100, out=None):
     t_start = time.time()
     from stable_baselines3 import SAC
@@ -81,6 +82,18 @@ def run(seed=0, n_samples=500_000, v_steps=4000, quantile=0.99,
         print("WARNING: policy looks undertrained; audit results describe a bad policy.")
 
     # ------------------------------------------------------ on-policy support
+    eq = find_attracting_fixed_point(ClosedLoop(net).eval(), seed=seed)
+    s_star = eq["s_star"]
+    drift = verify_fixed_point(ClosedLoop(net).eval(), s_star)
+    log["equilibrium"] = dict(s_star=s_star.tolist(), drift=drift,
+                              newton_residual=eq["residual"],
+                              converged=eq["converged"],
+                              note=("The closed loop's fixed point, NOT upright. A trained "
+                                    "policy generally holds an offset point; centring V "
+                                    "anywhere else guarantees cond(centre) < 0 by "
+                                    "construction, independent of training."))
+    print(f"equilibrium: s* = ({s_star[0]:+.8f}, {s_star[1]:+.8f}), drift {drift:.2e}")
+
     support = collect_support(net, n_episodes=n_episodes, horizon=horizon, seed=seed)
     log["support"] = support.coverage_report(n_episodes, horizon)
     print(f"support (full): {log['support']['n_states']} states, "
@@ -106,17 +119,21 @@ def run(seed=0, n_samples=500_000, v_steps=4000, quantile=0.99,
           f"thetadot p99 {log['steady_state']['thetadot_p99']}")
 
     # ---------------------------------------------------------------- region
-    lo, hi = steady.quantile_box(quantile)
-    # keep the box symmetric about upright so the annulus is not lopsided
-    half = np.maximum(np.abs(lo), np.abs(hi))
-    lo, hi = -half, half
-    hole_lo, hole_hi = np.array([-hole, -hole]), np.array([hole, hole])
+    # Centred on the CLOSED LOOP's fixed point, which is not upright. Centring on zero
+    # puts the true equilibrium at the box edge and cuts the annulus hole around a
+    # non-equilibrium, guaranteeing violations that no training can remove.
+    dev = steady.states - s_star
+    dev[:, 0] = wrap(dev[:, 0])
+    half = np.maximum(np.quantile(np.abs(dev), quantile, axis=0), 1e-6)
+    lo, hi = s_star - half, s_star + half
+    hole_half = hole * half
+    hole_lo, hole_hi = s_star - hole_half, s_star + hole_half
     boxes = R.annulus_boxes(lo, hi, hole_lo, hole_hi)
 
     log["region"] = dict(
         box_vs_steady_state=R.describe(lo, hi, steady),
         box_vs_full_support=R.describe(lo, hi, support),
-        hole=dict(lo=hole_lo.tolist(), hi=hole_hi.tolist(),
+        hole=dict(lo=hole_lo.tolist(), hi=hole_hi.tolist(), frac_of_halfwidth=hole,
                   why=("cond(x*) = 0 exactly by construction, so any box containing x* "
                        "has true infimum 0 and cannot certify at a positive margin. "
                        "Structural, not a verifier failure.")),
@@ -133,10 +150,12 @@ def run(seed=0, n_samples=500_000, v_steps=4000, quantile=0.99,
 
     # ------------------------------------------------------------- fit V
     print("training V ...")
-    V = train_V(net, steady, lo, hi, hole_lo, hole_hi, steps=v_steps, seed=seed)
+    V = train_V(net, steady, lo, hi, hole_lo, hole_hi, s_star,
+                steps=v_steps, seed=seed)
     loop = ClosedLoop(net)
     cond = DecreaseCondition(V, loop).eval()
     log["lyapunov"] = dict(form="||g(o)-g(o*)||^2 + c||o-o*||^2", c=0.5, hidden=32,
+                           centre=s_star.tolist(),
                            input="observation (cos th, sin th, thdot), cylinder-correct",
                            steps=v_steps)
 

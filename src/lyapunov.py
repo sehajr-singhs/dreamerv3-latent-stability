@@ -16,13 +16,16 @@ Two adaptations from the swing-model original, both load-bearing.
    cylinder.
 
 Positive definiteness survives both changes, and is worth checking explicitly rather
-than inheriting on faith. The quadratic term is
+than inheriting on faith. With o* = (cos th*, sin th*, thdot*) the quadratic term is
 
-    || o - o* ||^2 = (cos th - 1)^2 + sin^2 th + thdot^2 = 2 - 2 cos th + thdot^2
+    || o - o* ||^2 = 2 - 2 cos(th - th*) + (thdot - thdot*)^2
 
-which is >= 0, and is 0 exactly when cos th = 1 and thdot = 0, i.e. th = 0 (mod 2pi)
-and thdot = 0. So V >= c || o - o* ||^2 > 0 away from upright and V(x*) = 0 exactly.
-Condition (4a) is therefore structural here too, not something the loss must learn.
+which is >= 0, and is 0 exactly when th = th* (mod 2pi) and thdot = thdot*. So
+V >= c || o - o* ||^2 > 0 away from s* and V(s*) = 0 exactly. Condition (4a) is
+therefore structural here too, not something the loss must learn.
+
+Note s* is the CLOSED LOOP's fixed point, not upright. See LyapunovPD for why that
+distinction is fatal rather than cosmetic.
 
 g(o*) is recomputed inside forward, never cached, so V(x*) stays exactly 0 as the
 weights move; a stale cached g(o*) would silently break the guarantee. That bug is
@@ -59,17 +62,38 @@ class LyapunovNet(nn.Module):
 
 
 class LyapunovPD(nn.Module):
-    """V on the pendulum cylinder, positive definite about upright by construction."""
+    """V on the pendulum cylinder, positive definite about s_star by construction.
 
-    def __init__(self, c=0.5, hidden=32, out_dim=16):
+    s_star is REQUIRED and is the closed loop's actual fixed point, which for a trained
+    SAC policy is NOT upright. Measured for the seed-0 policy: the attracting fixed
+    point is at (theta, thetadot) = (0.142586, 0), an 8.17 degree steady-state offset,
+    because the policy commands u = +0.4999 at upright where holding needs exactly 0.
+
+    Centring on the wrong point is not a small error, it is fatal by construction. If
+    f_cl(s_star) != s_star then V(s_star) = 0 while V(f_cl(s_star)) > 0, so
+
+        cond(s_star) = -V(f_cl(s_star)) < 0
+
+    is a guaranteed violation at the centre that no training and no verifier can remove.
+    That is precisely what an earlier version of this class produced: persistent ~1e-3
+    violations in every narrow region. cnl-work's LyapunovPDOnState had this right, and
+    documents the same requirement for its own off-origin equilibrium.
+    """
+
+    def __init__(self, s_star, c=0.5, hidden=32, out_dim=16):
         super().__init__()
         self.obs = PendulumObs()
         self.net = LyapunovNet(in_dim=3, hidden=hidden, out_dim=out_dim)
         self.c = float(c)
-        # No batch dimension: auto_LiRPA warns that constant operands should not carry
-        # one, and a (1, 3) constant breaks the JacobianOP gradient expansion. Shape (3,)
-        # broadcasts identically against (B, 3), so the function is unchanged.
-        self.register_buffer("o_star", torch.tensor([1.0, 0.0, 0.0]), persistent=False)
+        s_star = torch.as_tensor(s_star, dtype=torch.float32).reshape(1, 2)
+        self.register_buffer("s_star", s_star.clone(), persistent=False)
+        # o* = (cos th*, sin th*, thdot*). Stored WITHOUT a batch dimension: auto_LiRPA
+        # warns that constant operands should not carry one, and a (1, 3) constant breaks
+        # the JacobianOP gradient expansion. Shape (3,) broadcasts identically against
+        # (B, 3), so the function is unchanged.
+        with torch.no_grad():
+            o_star = self.obs(s_star).reshape(-1)
+        self.register_buffer("o_star", o_star.clone(), persistent=False)
 
     def _g_star(self):
         return self.net(self.o_star)

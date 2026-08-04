@@ -52,7 +52,7 @@ def sample_states(n, lo, hi, support, hole_lo, hole_hi, frac_on_policy=0.5, rng=
     return s[~_in_hole(s, hole_lo, hole_hi)]
 
 
-def train_V(policy, support, lo, hi, hole_lo, hole_hi, *, c=0.5, hidden=32,
+def train_V(policy, support, lo, hi, hole_lo, hole_hi, s_star, *, c=0.5, hidden=32,
             steps=4000, batch=4096, lr=1e-3, rel_margin=0.01, seed=0, verbose=True):
     """Fit V so that V(f(s)) <= (1 - rel_margin) * V(s) on the region.
 
@@ -70,7 +70,7 @@ def train_V(policy, support, lo, hi, hole_lo, hole_hi, *, c=0.5, hidden=32,
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
 
-    V = LyapunovPD(c=c, hidden=hidden)
+    V = LyapunovPD(s_star, c=c, hidden=hidden)
     loop = ClosedLoop(policy)
     cond = DecreaseCondition(V, loop)
 
