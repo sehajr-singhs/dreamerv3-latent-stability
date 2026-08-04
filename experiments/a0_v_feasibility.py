@@ -138,8 +138,11 @@ if __name__ == "__main__":
     p.add_argument("--hole-frac", type=float, default=0.10)
     p.add_argument("--burn-ins", type=int, nargs="+", default=[10, 25, 50, 100])
     p.add_argument("--cs", type=float, nargs="+", default=[0.05, 0.5])
+    p.add_argument("--n-episodes", type=int, default=1000)
+    p.add_argument("--n-samples", type=int, default=100_000)
     p.add_argument("--beta", type=float, default=None,
                    help="if set, certify V(f) <= beta*V instead of plain decrease")
     a = p.parse_args()
     main(seed=a.seed, v_steps=a.v_steps, hidden=a.hidden, hole_frac=a.hole_frac,
-         burn_ins=tuple(a.burn_ins), cs=tuple(a.cs), beta=a.beta)
+         burn_ins=tuple(a.burn_ins), cs=tuple(a.cs), beta=a.beta,
+         n_episodes=a.n_episodes, n_samples=a.n_samples)

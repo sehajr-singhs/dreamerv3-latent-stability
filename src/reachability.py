@@ -69,20 +69,33 @@ class OnPolicySupport:
         self.in_support_tol = float(in_support_tol)
         self.near_tol = float(near_tol)
         self._tree = None
-        # Duplicate the angular coordinate at +/-2pi so a KD-tree (which knows nothing
-        # about periodicity) still measures the true wrapped distance near +/-pi.
-        if len(self.states):
-            try:
-                from scipy.spatial import cKDTree
-                pts = self._embed(self.states)
-                shifted = [pts]
-                for d in (-1.0, 1.0):
-                    q = pts.copy()
-                    q[:, 0] += d          # one full period == 1.0 in normalized units
-                    shifted.append(q)
-                self._tree = cKDTree(np.vstack(shifted))
-            except ImportError:
-                self._tree = None
+        self._tree_built = False
+
+    def _build_tree(self):
+        """Built LAZILY, on the first distance query.
+
+        Only the full support is ever queried for distances; the steady-state supports
+        from `tail` are used for quantiles and coverage alone. Building a tree for each
+        of those tripled memory for nothing, which mattered: on a memory-starved box the
+        sweep was being OOM-killed partway through.
+
+        The angular coordinate is duplicated at +/-1 period so a KD-tree, which knows
+        nothing about periodicity, still measures the true wrapped distance near +/-pi.
+        """
+        self._tree_built = True
+        if not len(self.states):
+            return
+        try:
+            from scipy.spatial import cKDTree
+        except ImportError:
+            return
+        pts = self._embed(self.states)
+        shifted = [pts]
+        for d in (-1.0, 1.0):
+            q = pts.copy()
+            q[:, 0] += d              # one full period == 1.0 in normalized units
+            shifted.append(q)
+        self._tree = cKDTree(np.vstack(shifted))
 
     @staticmethod
     def _embed(s):
@@ -96,6 +109,8 @@ class OnPolicySupport:
         """Normalized distance from each query state to the nearest visited state."""
         q = np.atleast_2d(np.asarray(query, dtype=np.float64))
         qe = self._embed(q)
+        if not self._tree_built:
+            self._build_tree()
         if self._tree is not None:
             d, _ = self._tree.query(qe, k=1)
             return np.asarray(d).ravel()
