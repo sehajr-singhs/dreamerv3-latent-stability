@@ -1,0 +1,274 @@
+{
+  "config": {
+    "seed": 0,
+    "n_samples": 20000,
+    "v_steps": 300,
+    "quantile": 0.99,
+    "hole": 0.05,
+    "time_budget": 20.0,
+    "method": "CROWN",
+    "min_width": 0.001,
+    "n_episodes": 200,
+    "horizon": 100,
+    "burn_in": 50,
+    "env": "Pendulum-v1"
+  },
+  "verifier": {
+    "verifier_root": "C:\\Users\\sehaj\\cnl-work",
+    "verifier_commit": "6ccf7ae46dc9fdbaf8a33a64b576c22234c7583c",
+    "verify_py_dirty": false,
+    "note": "certify_box reused verbatim from cnl-work, not reimplemented"
+  },
+  "policy": {
+    "mean_return": -150.26841384774696,
+    "std_return": 93.86533016010077,
+    "extraction_max_err": 1.1920928955078125e-07,
+    "net_arch": [
+      64,
+      64
+    ],
+    "frozen": true
+  },
+  "support": {
+    "n_states": 20200,
+    "n_episodes": 200,
+    "horizon": 100,
+    "in_support_tol": 0.01,
+    "near_tol": 0.05,
+    "theta_p99": [
+      -3.0518012991746004,
+      3.066546175479889
+    ],
+    "thetadot_p99": [
+      -7.389363827705383,
+      7.000687692165377
+    ],
+    "theta_minmax": [
+      -3.141191307698385,
+      3.141512155532837
+    ],
+    "thetadot_minmax": [
+      -8.0,
+      7.180373191833496
+    ],
+    "note": "Empirical support is a LOWER BOUND on reachability: a state absent from this sample is rare under the reset distribution, not proven unreachable."
+  },
+  "steady_state": {
+    "n_states": 10200,
+    "n_episodes": 200,
+    "horizon": 50,
+    "in_support_tol": 0.01,
+    "near_tol": 0.05,
+    "theta_p99": [
+      -1.164479525685309,
+      0.6464865914927507
+    ],
+    "thetadot_p99": [
+      -2.6841466164588925,
+      3.5420669639109468
+    ],
+    "theta_minmax": [
+      -3.1369920412646692,
+      3.141512155532837
+    ],
+    "thetadot_minmax": [
+      -8.0,
+      7.178189754486084
+    ],
+    "note": "Empirical support is a LOWER BOUND on reachability: a state absent from this sample is rare under the reset distribution, not proven unreachable.",
+    "burn_in": 50,
+    "why": "Region defined from steps >= burn_in only. Swing-up necessarily increases any Lyapunov function, so the full on-policy support admits no monotone V. The reachability gate still uses the full support."
+  },
+  "region": {
+    "box_vs_steady_state": {
+      "lo": [
+        -1.164479525685309,
+        -3.5420669639109468
+      ],
+      "hi": [
+        1.164479525685309,
+        3.5420669639109468
+      ],
+      "frac_on_policy_states_inside": 0.990686274509804,
+      "n_on_policy_states_inside": 10105
+    },
+    "box_vs_full_support": {
+      "lo": [
+        -1.164479525685309,
+        -3.5420669639109468
+      ],
+      "hi": [
+        1.164479525685309,
+        3.5420669639109468
+      ],
+      "frac_on_policy_states_inside": 0.7888118811881188,
+      "n_on_policy_states_inside": 15934
+    },
+    "hole": {
+      "lo": [
+        -0.05,
+        -0.05
+      ],
+      "hi": [
+        0.05,
+        0.05
+      ],
+      "why": "cond(x*) = 0 exactly by construction, so any box containing x* has true infimum 0 and cannot certify at a positive margin. Structural, not a verifier failure."
+    },
+    "n_annulus_boxes": 4,
+    "annulus_steady_state_coverage": 0.9840196078431372,
+    "annulus_full_support_coverage": 0.7851485148514852,
+    "quantile": 0.99
+  },
+  "lyapunov": {
+    "form": "||g(o)-g(o*)||^2 + c||o-o*||^2",
+    "c": 0.5,
+    "hidden": 32,
+    "input": "observation (cos th, sin th, thdot), cylinder-correct",
+    "steps": 300
+  },
+  "sampling": {
+    "n_sampled": 19927,
+    "n_violations": 4001,
+    "violation_rate": 0.2007828574296181,
+    "worst_cond": -2.6304264068603516,
+    "worst_state": [
+      -1.1644794940948486,
+      -3.542067050933838
+    ]
+  },
+  "bab": {
+    "boxes": [
+      {
+        "verdict": "violation",
+        "certified": false,
+        "counterexample": [
+          -1.1644794940948486,
+          -3.542067050933838
+        ],
+        "F_at_ce": -2.6304264068603516,
+        "subdomains": 11,
+        "seconds": 44.44,
+        "worst_lower_bound": -186.43292236328125,
+        "method": "CROWN",
+        "box": {
+          "lo": [
+            -1.164479525685309,
+            -3.5420669639109468
+          ],
+          "hi": [
+            -0.05,
+            3.5420669639109468
+          ]
+        }
+      },
+      {
+        "verdict": "unknown",
+        "certified": false,
+        "reason": "timeout",
+        "unresolved_leaves": 1,
+        "subdomains": 9,
+        "seconds": 44.56,
+        "worst_lower_bound": -163.50201416015625,
+        "method": "CROWN",
+        "box": {
+          "lo": [
+            0.05,
+            -3.5420669639109468
+          ],
+          "hi": [
+            1.164479525685309,
+            3.5420669639109468
+          ]
+        }
+      },
+      {
+        "verdict": "violation",
+        "certified": false,
+        "counterexample": [
+          -0.05000000074505806,
+          -0.06756147742271423
+        ],
+        "F_at_ce": -0.04506950080394745,
+        "subdomains": 9,
+        "seconds": 41.38,
+        "worst_lower_bound": -20.39116668701172,
+        "method": "CROWN",
+        "box": {
+          "lo": [
+            -0.05,
+            -3.5420669639109468
+          ],
+          "hi": [
+            0.05,
+            -0.05
+          ]
+        }
+      },
+      {
+        "verdict": "violation",
+        "certified": false,
+        "counterexample": [
+          0.05000000074505806,
+          0.10916179418563843
+        ],
+        "F_at_ce": -0.003790711984038353,
+        "subdomains": 7,
+        "seconds": 51.33,
+        "worst_lower_bound": -18.71048355102539,
+        "method": "CROWN",
+        "box": {
+          "lo": [
+            -0.05,
+            0.05
+          ],
+          "hi": [
+            0.05,
+            3.5420669639109468
+          ]
+        }
+      }
+    ],
+    "n_violation": 3,
+    "n_unknown": 1,
+    "n_certified": 0
+  },
+  "counterexamples": [
+    {
+      "state": [
+        -1.1644794940948486,
+        -3.542067050933838
+      ],
+      "cond": -2.6304244995117188,
+      "reach_verdict": "NEAR",
+      "normalized_distance_to_support": 0.0242049290739506
+    },
+    {
+      "state": [
+        -0.05000000074505806,
+        -0.06756147742271423
+      ],
+      "cond": -0.045069485902786255,
+      "reach_verdict": "IN_SUPPORT",
+      "normalized_distance_to_support": 0.0034457748872468935
+    },
+    {
+      "state": [
+        0.05000000074505806,
+        0.10916179418563843
+      ],
+      "cond": -0.0037907082587480545,
+      "reach_verdict": "IN_SUPPORT",
+      "normalized_distance_to_support": 0.0011583892276139029
+    }
+  ],
+  "result": {
+    "sampling_violations": 4001,
+    "sampling_rate": 0.2007828574296181,
+    "bab_counterexamples": 3,
+    "reachable_counterexamples": 2,
+    "gap_demonstrated": false,
+    "interpretation": "gap_demonstrated is True only when a 500k-sample audit found NOTHING and branch-and-bound found at least one violation at a state the frozen policy demonstrably reaches. Counterexamples failing the reachability gate are reported above for transparency but are NOT findings.",
+    "seconds": 227.8
+  }
+}
