@@ -171,10 +171,75 @@ removing most of the volume being certified. Now a fraction of the region.
 
 ---
 
+## A0 re-centred sweep (`results/a0_feasibility_seed0.json`), run on Colab
+
+The sweep the whole pipeline was waiting on. Run on Colab Linux, `v_steps=2000`,
+`n_episodes=1000`, `n_samples=100000`, seed 0.
+
+**Centring ported.** Colab found `s* = (0.14258597, 2.42e-18)`, matching the local value
+to eight decimals, so the fix travels and is not an artifact of one machine.
+
+### Six of the eight rows are physically inadmissible
+
+Every region has to be checked against the `|theta| <= 0.411517` actuation limit *before*
+its violation rate means anything. Most of them fail:
+
+| burn_in | c | theta region | inside limit? | rate | n_viol / n_samp | worst cond |
+|---|---|---|---|---|---|---|
+| 10 | 0.05 | [-2.516, 2.801] | no, 6x over | 7.377% | 4172 / 56553 | -2.23e-01 |
+| 10 | 0.5 | [-2.516, 2.801] | no | 6.723% | 3802 / 56553 | -2.09e+00 |
+| 25 | 0.05 | [-1.722, 2.007] | no, 5x over | 5.540% | 3128 / 56458 | -1.80e-01 |
+| 25 | 0.5 | [-1.722, 2.007] | no | 5.287% | 2985 / 56458 | -1.86e+00 |
+| 50 | 0.05 | [-0.131, 0.4166] | no, edge over | 1.623% | 994 / 61261 | -2.21e-04 |
+| 50 | 0.5 | [-0.131, 0.4166] | no | 1.882% | 1153 / 61261 | -1.71e-03 |
+| **100** | **0.05** | **[0.0248, 0.2604]** | **yes** | **0.177%** | **97 / 54868** | **-3.93e-06** |
+| **100** | **0.5** | **[0.0248, 0.2604]** | **yes** | **0.159%** | **87 / 54868** | **-3.69e-05** |
+
+The `burn_in=50` rows are the ones worth not waving through. They exceed the limit by only
+`5e-03` rad, but that is enough to put the **second fixed point at `0.411218` inside the
+box**. A region containing the saturation equilibrium is category 4, not evidence about V.
+
+Their rates are quoted above for transparency and are **not** results. Reading the 7.377%
+row as "V is bad" would be reading physics as a training failure.
+
+### The one admissible setting is not clean
+
+At `burn_in=100`, sampling finds **87 violations in 54,868 samples (0.159%)**. So:
+
+- **There is no clean sampling baseline, and no gap claim is available from this sweep.**
+  A sampling-to-proof gap requires sampling to find *nothing*. It found 87 things.
+- These are **not** category 2. At `-3.69e-05` they sit four orders of magnitude above the
+  `1e-9` machine-zero band, so they are genuine small violations, not the structural
+  equality at `s*`.
+
+**The negative result is a strong one.** `burn_in=100` is not the degenerate collapse that
+the Degeneracy note warns about: it holds `cov_steady = 0.980` and `cov_full = 0.683`, i.e.
+68% of every state the policy visits including transients, inside a `+/-6.75deg` box. So the
+region is correctly centred, physically admissible, and reachability-honest, and V still
+cannot be driven clean on it. All three known confounds are ruled out by measurement rather
+than assertion. That makes this an obstruction result, not an inconclusive one.
+
+Per the standing rule: this is not a licence to widen the region or reshape V.
+
+### Open probe
+
+`v_steps` was 2000. Whether more optimizer steps close 0.159% toward zero at a **fixed**
+region and **fixed** V form is a budget question, not a claim question, and is categorically
+different from widening until a gap appears. Result pending; see the Status block.
+
+---
+
 ## Status
 
 - Gates **pass**. Policy **trained**. Pipeline **runs end to end**.
-- Gap: **not claimed.** Pending the re-centred A0 sweep. Where sampling cannot be made
-  clean, the honest result is the obstruction, not a gap.
+- A0 re-centred sweep **done**. Best admissible setting is `burn_in=100`, `c=0.5`:
+  **0.159%** sampled violation rate at `cov_full = 0.683`.
+- Gap: **not claimed, and not available from this sweep.** Sampling is not clean, so there
+  is nothing a directed search could find that sampling missed. Where sampling cannot be
+  made clean, the honest result is the obstruction, not a gap.
+- v_steps probe **pending**: does 0.159% close toward zero or plateau at fixed region and
+  fixed V? That decides between "clean baseline, A1 is meaningful" and "obstruction confirmed."
+- A1 **not run.** It is gated behind a clean A0 baseline and must stay that way.
 - dReal confirmation harness **not written**. Nothing may be called dReal-confirmed.
 - DreamerV3 **not started**. Scope stays the one-step latent transition, smallest model.
+- Repo is **local only**. No remote, nothing pushed, publishing undecided.
