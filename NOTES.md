@@ -202,44 +202,71 @@ box**. A region containing the saturation equilibrium is category 4, not evidenc
 Their rates are quoted above for transparency and are **not** results. Reading the 7.377%
 row as "V is bad" would be reading physics as a training failure.
 
-### The one admissible setting is not clean
+### The admissible setting is clean, above a training-budget threshold
 
-At `burn_in=100`, sampling finds **87 violations in 54,868 samples (0.159%)**. So:
+At `v_steps=2000` the admissible row showed 87 violations in 54,868 samples (0.159%), and
+this file previously concluded from that single budget that the policy admits no clean
+certificate here, calling it an obstruction result. **That conclusion was wrong and is
+retracted.** It was drawn from one point on an axis that had not been swept.
 
-- **There is no clean sampling baseline, and no gap claim is available from this sweep.**
-  A sampling-to-proof gap requires sampling to find *nothing*. It found 87 things.
-- These are **not** category 2. At `-3.69e-05` they sit four orders of magnitude above the
-  `1e-9` machine-zero band, so they are genuine small violations, not the structural
-  equality at `s*`.
+`experiments/a0_v_feasibility.py --burn-ins 100 --cs 0.05 0.5`, varying only `v_steps`
+(`results/a0_vsteps{2000,4000,8000,16000,32000}_seed0.json`):
 
-**The negative result is a strong one.** `burn_in=100` is not the degenerate collapse that
-the Degeneracy note warns about: it holds `cov_steady = 0.980` and `cov_full = 0.683`, i.e.
-68% of every state the policy visits including transients, inside a `+/-6.75deg` box. So the
-region is correctly centred, physically admissible, and reachability-honest, and V still
-cannot be driven clean on it. All three known confounds are ruled out by measurement rather
-than assertion. That makes this an obstruction result, not an inconclusive one.
+| v_steps | rate c=0.05 | rate c=0.5 | worst cond, c=0.5 | theta region |
+|---|---|---|---|---|
+| 2000 | 0.177% | 0.159% | `-3.685e-05` | [0.0248, 0.2604] |
+| 4000 | 0.049% | 0.033% | `-7.891e-06` | [0.0248, 0.2604] |
+| **8000** | **0** | **0** | **`+6.615e-06`** | [0.0248, 0.2604] |
+| 16000 | 0 | 0 | `+6.729e-06` | [0.0248, 0.2604] |
+| 32000 | 0 | 0 | `+6.725e-06` | [0.0248, 0.2604] |
 
-Per the standing rule: this is not a licence to widen the region or reshape V.
+**Control held.** One distinct theta region across all ten rows, `cov_full = 0.6834`
+throughout, `s*` identical, `hidden=32` and `hole_frac=0.10` fixed. Only the optimizer
+budget moved, so the comparison is valid and nothing was widened or reshaped.
 
-### Open probe
+**The signal is the sign flip, not the zero.** `worst_cond` crosses from `-3.685e-05` to
+`-7.891e-06` to `+6.615e-06`, then sits stable at `+6.6e-06` through 16000 and 32000.
+Positive means the *minimum* sampled `cond` clears zero with margin: every sampled point
+strictly satisfies the decrease condition, rather than the violating set merely shrinking.
+Stability across three budgets means it is not one lucky initialization.
 
-`v_steps` was 2000. Whether more optimizer steps close 0.159% toward zero at a **fixed**
-region and **fixed** V form is a budget question, not a claim question, and is categorically
-different from widening until a gap appears. Result pending; see the Status block.
+So the earlier plateau reading was a **budget artifact measured at a single budget**. The
+distinction that matters: this was found by sweeping the optimizer at a *fixed* region and
+*fixed* V form, which is a budget question. Widening the region until violations vanish
+would have been the forbidden move, and is not what happened.
+
+### The resolution caveat, which is the whole basis of the claim
+
+**0 violations in 54,868 samples does not mean the rate is zero.** By the rule of three it
+bounds the true rate at roughly `< 5.5e-05`. Sampling cannot see below its own floor, and
+that floor is exactly the room a directed search has to work in. This is what makes a
+sampling-to-proof gap possible rather than a contradiction.
+
+It is also the risk. **A1 samples 500,000, about 9x more.** If the true rate lies anywhere
+in the `2e-06` to `5.5e-05` band, A0's audit sees nothing while A1's sees roughly 25. A1's
+own 500k audit is therefore the real cleanliness test, and if it comes back dirty there is
+no gap at that sample count. Read A1's sampling line before reading its BaB line.
+
+**Use `c=0.5`, not `c=0.05`.** Both are sampling-clean, but c=0.05's margin is `+6.4e-07`,
+close enough to the `1e-9` structural band that a small BaB counterexample would be hard to
+separate from numerical noise. c=0.5 gives `+6.6e-06`, ten times the headroom.
+
+`v_steps=8000` is the threshold; 16000 and 32000 buy nothing further. A1 uses **16000** to
+sit clear of the knee rather than on it.
 
 ---
 
 ## Status
 
 - Gates **pass**. Policy **trained**. Pipeline **runs end to end**.
-- A0 re-centred sweep **done**. Best admissible setting is `burn_in=100`, `c=0.5`:
-  **0.159%** sampled violation rate at `cov_full = 0.683`.
-- Gap: **not claimed, and not available from this sweep.** Sampling is not clean, so there
-  is nothing a directed search could find that sampling missed. Where sampling cannot be
-  made clean, the honest result is the obstruction, not a gap.
-- v_steps probe **pending**: does 0.159% close toward zero or plateau at fixed region and
-  fixed V? That decides between "clean baseline, A1 is meaningful" and "obstruction confirmed."
-- A1 **not run.** It is gated behind a clean A0 baseline and must stay that way.
+- A0 re-centred sweep **done**, and the budget axis swept at the admissible setting.
+- Clean sampling baseline **reached**: `burn_in=100`, `c=0.5`, `v_steps >= 8000` gives
+  **0 violations in 54,868 samples** at `cov_full = 0.683`, worst cond `+6.6e-06`.
+- The earlier "obstruction, no gap available" conclusion is **retracted**; it was drawn from
+  `v_steps=2000` alone. See the retraction above.
+- Gap: still **not claimed.** A clean A0 baseline makes a gap *measurable*, not *measured*.
+  Nothing is claimed until A1 runs and its own 500k audit is checked first.
+- A1 **not run**, and gated on conferring first. Command must use `--v-steps 16000`.
 - dReal confirmation harness **not written**. Nothing may be called dReal-confirmed.
 - DreamerV3 **not started**. Scope stays the one-step latent transition, smallest model.
 - Repo is **local only**. No remote, nothing pushed, publishing undecided.
