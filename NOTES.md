@@ -256,6 +256,45 @@ sit clear of the knee rather than on it.
 
 ---
 
+## A1, seed 0: no gap. The certificate holds.
+
+`--seed 0 --n-samples 500000 --v-steps 16000`, `c=0.5`, `burn_in=100`, on the admissible
+region. Run on Colab.
+
+> **PROVISIONAL.** `results/a1_seed0.json` is **not yet committed**. The Colab session's
+> local record was lost after the run, so the file could not be pulled; the numbers below
+> are transcribed from the run output. No claim here is final until the JSON is landed and
+> this notice is removed. Re-running seed 0 reproduces it deterministically.
+
+**[1] Sampling, read first.** `0` violations in `275,674` samples, worst cond `+6.68e-06`.
+The baseline is clean, so the gap question passes to branch-and-bound. Had sampling found
+violations there would be no gap at this sample count and BaB would not have been read at
+all.
+
+**[2] Branch-and-bound.** Boxes 0, 1, 2 **verified**. Box 3 **unknown** (timeout, 180
+subdomains). `bab_counterexamples = 0`, `reachable_counterexamples = 0`,
+`gap_demonstrated = false`.
+
+**The result: there is no sampling-to-proof gap on this policy and this region.** The
+certificate holds where the verifier resolved it. Directed formal search found nothing that
+sampling missed, because it found nothing at all.
+
+**Box 3's `unknown` is verifier incompleteness and is not a finding.** It means the bound
+stayed loose and no counterexample was found within the time budget. It is not a violation,
+not a gap, not a partial gap, and not evidence of one. It is equally not evidence of safety
+on that box: the box is simply unresolved. Anyone quoting this run must say "three boxes
+verified, one unresolved," never "mostly verified" and never anything implying box 3 hides
+something. Category 3, and nothing more.
+
+**Resolution bound.** 0 in 275,674 samples bounds the true violation rate at roughly
+`< 1.1e-05` by the rule of three. As always this is a bound, not a zero.
+
+**One seed.** The standing rule for a positive was that a gap on seed 0 is a candidate
+needing multi-seed confirmation. The same standard applies to a null: this is one
+initialization of V, on one seed, with one box unresolved. See the strategy note below.
+
+---
+
 ## Status
 
 - Gates **pass**. Policy **trained**. Pipeline **runs end to end**.
@@ -264,9 +303,15 @@ sit clear of the knee rather than on it.
   **0 violations in 54,868 samples** at `cov_full = 0.683`, worst cond `+6.6e-06`.
 - The earlier "obstruction, no gap available" conclusion is **retracted**; it was drawn from
   `v_steps=2000` alone. See the retraction above.
-- Gap: still **not claimed.** A clean A0 baseline makes a gap *measurable*, not *measured*.
-  Nothing is claimed until A1 runs and its own 500k audit is checked first.
-- A1 **not run**, and gated on conferring first. Command must use `--v-steps 16000`.
+- A1 seed 0 **run**: sampling clean (0 / 275,674), BaB found **0** counterexamples, three
+  boxes verified and one unresolved. **No gap. The certificate holds.**
+- Gap: **not found**, and therefore not claimed. The hypothesis did not hold here.
+- `results/a1_seed0.json` **not yet committed** (session lost). The A1 section is marked
+  provisional until it is.
+- Multi-seed A1 **not run**. One seed is not an evidence base for a null any more than for
+  a positive.
+- Positive control **not run**. A null is only as strong as the demonstrated ability to
+  detect a violation that is really there.
 - dReal confirmation harness **not written**. Nothing may be called dReal-confirmed.
 - DreamerV3 **not started**. Scope stays the one-step latent transition, smallest model.
 - Repo is **local only**. No remote, nothing pushed, publishing undecided.
