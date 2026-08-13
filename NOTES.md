@@ -295,6 +295,199 @@ initialization of V, on one seed, with one box unresolved. See the strategy note
 
 ---
 
+## DreamerV3 leg (D1): one-step latent transition, ported and gated
+
+**NOT a result.** No gap measured, no JSON, nothing to email, no artifact may quote
+any number here as a finding. This section records the infrastructure and the first
+measurement (boundability), per the locked scope: one-step latent transition, smallest
+official model (`size1m`), nothing about the imagined rollout.
+
+### The port (`src/dreamer.py`)
+
+Faithful torch port of DreamerV3's one-step latent transition: `RSSM._core` +
+`RSSM._prior`/`_logit` from danijar/dreamerv3 @ `e3f0224`, layers `Linear` /
+`BlockLinear` / `Norm(rms)` from danijar/embodied @ `a6583c1`, at the `size1m` config
+(deter=512, hidden=64, stoch=32, classes=4, blocks=8, silu, rms).
+
+- Parameters keep upstream value names (`kernel`/`bias`/`scale`), so a JAX checkpoint
+  loads by key via `load_jax_arrays`; only plain Linear kernels are transposed
+  (in,out)->(out,in). BlockLinear expands to a block-diagonal weight so the verifier
+  sees one BoundLinear.
+- The certified object is the CLOSED one-step map on the latent itself,
+  z -> z' = (deter', stoch'), under the frozen deterministic actor pi(z) = tanh(mean):
+  deter' = core(z, pi(z)), stoch' = MEAN of the prior categorical
+  (1-unimix)*softmax(logits) + unimix/classes (the transition module still returns
+  (deter', logits', stoch') raw). The certificate describes the deterministic mean
+  map; the model samples one-hot during imagination. Stated in every artifact.
+- Upstream action normalization `a /= max(1, |a|)` is the identity for every action
+  distribution DreamerV3 uses (tanh-bounded continuous, one-hot discrete). The port
+  passes actions through, pins the identity by test, and documents the contract;
+  feeding out-of-range actions makes the port describe a different function.
+
+### Transcription cross-checks (`tests/test_dreamer_transition.py`), all passing
+
+The port is checked against an INDEPENDENT re-implementation of the upstream formulas
+(einsum BlockLinear, x*sigmoid silu, flat-tensor gates). Agreement ~1e-8. The gate
+caught three real slips before they could become results:
+
+1. the GRU candidate must be `tanh(reset * cand)`; dropping the sigmoided reset factor
+   drifted the output by 1.4e-01,
+2. `dyngru` consumes the DYNHID output (width deter), not the 2048-wide concat,
+3. the gate split is on the GROUPED tensor (flat2group then split); my first reference
+   (flat chunk) was the wrong one, not the port.
+
+`load_jax_arrays` is verified end to end: a synthetic checkpoint with upstream key
+names loads into a fresh port and reproduces the arrays' function to ~3e-8.
+
+### Boundability gate (`experiments/d1_smoke.py`), passing -- and its measurement
+
+auto_LiRPA 0.7.2 traces and CROWN-bounds the full one-step graph. Bounds are SOUND at
+every radius tested. The measurement is the looseness, and it is the guardrail-predicted
+scaling boundary:
+
+| graph | width/span at r=0.02 |
+|---|---|
+| Linear -> RMSNorm -> SiLU (one stage) | 1.9e2x |
+| BlockLinear -> RMSNorm(512) -> SiLU | 8.7e1x |
+| full one-step transition | 4.3e6x |
+
+Single stages are ~1e2x loose; the chain compounds to ~1e6x. The driver is RMSNorm's
+1/sqrt(mean(x^2)+eps): interval propagation gives mean2 a lower bound of 0 on any box
+that crosses zero, so rsqrt reaches 1/sqrt(eps)=100 and the norm amplifies; the GRU's
+elementwise products compound it. Sound but vacuous at audit-relevant radii: the audit
+must branch-and-bound tiny boxes, and the expected verdict on any realistic latent box
+is "unknown" (category 3) -- a documented scaling boundary, not a gap, not a headline.
+
+### auto_LiRPA 0.7.2 gotchas worth not re-deriving
+
+- `BoundDiv.forward` has an ad-hoc LayerNorm special case that fires on ANY
+  `x / sqrt(...)` pattern (div's second input being a BoundSqrt) and rebuilds a
+  layer-norm-style deviation from `inputs[0].inputs[0]` -- wrong shape and value for
+  RMSNorm. Write norms without div-by-sqrt: rsqrt(s) as exp(-0.5*log(s)) (exp and log
+  both have proper relaxations).
+- silu as x/(1+exp(-x)) is boundable but its exp relaxation overflows to inf slopes on
+  wide intervals and poisons CROWN with NaN A matrices. Write silu as
+  x*(0.5+0.5*tanh(x/2)): identically equal, finite everywhere.
+- `copy_` from a grad-requiring tensor flips requires_grad on a buffer in torch >= 2.11;
+  auto_LiRPA's jit tracer then rejects the module. Build derived buffers under no_grad.
+- No BoundRsqrt and no BoundSiLU in 0.7.2; BoundPow with fractional exponents is not
+  the safe path.
+
+### Policy port and closed loop (`src/dreamer.py`)
+
+The actor head is transcribed from dreamerv3/agent.py + embodied/jax/heads.py
+(`MLPHead`, `bounded_normal`): feat = concat(deter, stoch_flat), 3x
+(Linear(64) + RMSNorm + silu), Linear(64->act_dim, outscale 0.01 at init), a = tanh(mean).
+`outs.Agg` aggregates only loss/entropy terms, never `pred`, so the deterministic
+action is exactly per-component tanh(mean). Module names match upstream
+(`mlp/linear{i}`, `mlp/norm{i}`, `head/mean`), so `load_jax_arrays` loads real
+`world_model/pol/...` keys. The closed loop `OneStepClosedLoop` is the FULL square
+map z -> z' under the policy (cross-checked by test to equal trans(policy(z))).
+
+### Why the certified map must be FULL (deter, stoch) -> (deter', stoch')
+
+A tempting design certifies only the deter component (V on deter, loop outputting
+deter') because the stoch' output is the part CROWN cannot bound. That design is a
+STRUCTURAL TRAP and was rejected: the deter-component map z -> deter' is not square,
+and V_d(deter*) = 0 is its global minimum, so on the 128-dim slice
+{deter = deter*, stoch != stoch*} the condition reads cond = -V_d(deter') < 0 BY
+CONSTRUCTION -- manufactured violations the model never commits, and BaB would find
+them (the on-policy trajectory passes through deter ~ deter* on its way to z*, so the
+reachability gate rates them near-support). This is the A0 trap on the latent. The
+full map has no such slice: the only structural zero is z* itself, exactly like the
+pendulum. Recorded here so nobody re-derives it.
+
+### The audit script (`experiments/d1_sampling_gap.py`), smoke-tested end to end
+
+The D1 audit mirrors A1 on the latent: frozen model -> on-policy latent support from
+the model's OWN closed loop -> latent fixed point z* (settle + damped polish, run
+REFUSES to proceed if residual > 1e-4) -> region + k-dim annulus -> fit V (E10 form,
+c=0.5) -> sampling audit -> branch-and-bound -> reachability gate -> gap_demonstrated.
+The smoke run (--synthetic --quick, random weights, NEVER quoted) passes end to end:
+
+    equilibrium residual 2.98e-08 (converged)      region: 4 annulus boxes, 83.8%
+    sampling: 0/12866 violations, worst cond +2.23e-03
+    BaB: WALL -- verifier cannot process the certified graph: AssertionError:
+          Only positive values are supported in BoundReciprocal (category 3)
+    gap_demonstrated: false                           total 130 s
+
+Design points the smoke run validates:
+
+- The annulus hole excludes z* along only the k largest-halfwidth dims (default k=4,
+  smoke k=2): removing z* from every certified box is all that is required, and the
+  slab decomposition then yields 2k boxes instead of 2*640. Same hole in training,
+  sampling, and certification.
+- BaB is WALL-GATED: the certified graph contains stoch' = exp/sum-div, and
+auto_LiRPA's interval pass asserts in BoundReciprocal (exp interval lower bound 0 on
+any box at the measured vacuity). One structural probe on the first box establishes
+the wall; every box is then recorded unknown with the reason -- never certified,
+never a violation. If the probe ever survived (finite bounds), the per-box
+branch-and-bound loop runs with per-box verdicts.
+- Per-call CPU timings on this laptop (heavily loaded): loop forward ~40 ms/call,
+  BoundedModule build for the full cond graph ~4 min (torch.onnx export of the
+  ~400-node graph), V step @512 ~3 s. The real run belongs on Colab (GPU), and the
+  support export should batch the loop.
+- Sampling clean on the RANDOM-weight synthetic model (worst cond +2.2e-03): the
+  pipeline does not manufacture violations. Detection capability (cond < 0 flagged,
+  reachability-gated) is exercised by construction; a positive-control model is still
+  on the open list.
+
+### Turnkey Colab notebook (`colab/d1_audit.ipynb`, built by `colab/build_d1_notebook.py`)
+
+The heavy run is a notebook now, generated from the builder (edit the builder, not
+the JSON). It: pins sources (rl-wm-audit zip upload; dreamerv3 @ e3f0224 with its
+VENDORED embodied -- the exact nets.py the port transcribed, verified; cnl-work
+with the verify.py SHA-256 pin), installs jax[cuda12]==0.4.33 + numpy<2 +
+dm_control + auto_LiRPA on Colab GPU, runs the gates, trains size1m on
+dmc_cartpole_balance (pixels), exports the JAX params under the upstream key
+names (dyn/*, pol/* -- the loader's module boundaries), rolls out the agent for
+the on-policy latent support (posterior latents; the certified map is the
+prior-mean surrogate -- recorded, never conflated), and runs
+`d1_sampling_gap.py --action-dim 1`.
+
+**auto_LiRPA install (Colab-proven fix):** `pip install auto_LiRPA` FAILS on Colab.
+The published PyPI releases carry legacy `torch<1.13` constraints; pip backtracks
+and dies with `ResolutionImpossible` / `Could not find a version that satisfies
+torch<1.13.0,>=1.8.0` against Colab's torch 2.11, and 0.7.2 is NOT on PyPI at all
+(404). The validated verifier is auto_LiRPA 0.7.2 from GitHub at commit
+`5a098e8f9fb5786a428a024981d833d303921f2d` (June 2026 release; requires
+`torch>=2.0,<2.12`). The notebook installs it via
+`git+https://github.com/Verified-Intelligence/auto_LiRPA.git@5a098e8f...` and
+asserts `auto_LiRPA.__version__ == '0.7.2'` before anything runs. Order matters:
+dreamerv3's `numpy<2` applies first, then auto_LiRPA's `numpy>=2` bump leaves
+numpy 2.x -- the exact numpy/torch/auto_LiRPA combo validated locally. Install
+lines fail loudly (no `| tail` to mask pip exit codes).
+
+Second catch (Colab-proven): commit 5a098e8f's metadata declares
+`python_requires='~=3.11.0'`, so pip refuses it on Colab's Python 3.12
+(measured: `Package 'auto-lirpa' requires a different Python: 3.12.13 not in
+'~=3.11.0'`). The constraint is advisory -- the identical commit runs on Python
+3.13.9 on the validating machine -- so the notebook installs it with
+`--ignore-requires-python` and the correctness gates re-validate the verifier on
+Colab's runtime. The pip warnings about Colab-preinstalled flax/opencv/etc.
+wanting newer jax/numpy are noise: the pinned dreamerv3 stack imports no flax
+(verified in the vendored embodied: einops/jax/ninjax only).
+
+Key upstream APIs pinned for the notebook (all from dreamerv3 @ e3f0224): the
+checkpoint is `logdir/ckpt/<latest>/agent.pkl` = pickle of
+`{'params': {flat ninjax keys}, 'counters'}`; `agent.policy(carry, obs)` returns
+the visited latent in `carry[1] = {deter, stoch}`; `make_agent`/`make_env` from
+`dreamerv3.main` rebuild the agent in-process; the task flag is
+`dmc_cartpole_balance` (main.py splits on '_' and looks up the suite).
+
+### Open items for the heavy run
+
+- RUN the notebook on Colab. Training is ~1.5-3 h on a T4 at 1e6 steps (the
+  notebook lowers to 3e5 for a quick run); the audit itself is ~10-20 min on GPU.
+- Positive control (non-contractive latent map) to demonstrate the sampling audit can
+  find violations; and multi-seed runs.
+- Expected real-run outcome, stated plainly: sampling baseline (whatever it measures)
+  + BaB unknown everywhere (the categorical wall, category 3). A NULL is the likely
+  honest result; a sampling finding on a trained model would be the real result, and
+  it must survive the reachability gate before it means anything.
+
+---
+
 ## Status
 
 - Gates **pass**. Policy **trained**. Pipeline **runs end to end**.
@@ -313,5 +506,13 @@ initialization of V, on one seed, with one box unresolved. See the strategy note
 - Positive control **not run**. A null is only as strong as the demonstrated ability to
   detect a violation that is really there.
 - dReal confirmation harness **not written**. Nothing may be called dReal-confirmed.
-- DreamerV3 **not started**. Scope stays the one-step latent transition, smallest model.
+- DreamerV3 leg **built end to end**: transition + actor ported (`src/dreamer.py`),
+  transcription cross-checks pass (11), CROWN-boundability gate passes (sound but
+  vacuous ~1e6x at r=0.02), and the full D1 audit script runs on smoke sizes
+  (`experiments/d1_sampling_gap.py` --synthetic --quick: fixed point verified,
+  sampling clean, BaB records the categorical wall, gap_demonstrated false). The
+  certified map is the FULL one-step map z -> z' under the deterministic actor; the
+  deter-only variant is a documented structural trap. Heavy run (trained model,
+  Colab) **not done**; `d1_quick_seed0.json` is smoke-only, never quoted. Scope
+  stays one-step, smallest model.
 - Repo is **local only**. No remote, nothing pushed, publishing undecided.

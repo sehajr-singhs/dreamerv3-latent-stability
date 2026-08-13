@@ -58,12 +58,25 @@ src/region.py         Annulus decomposition, and box provenance vs the on-policy
 src/verifier.py       Loads certify_box from cnl-work; records its git commit
 src/train_policy.py   Trains the frozen SAC policy (run once)
 src/train_lyapunov.py Fits V to the frozen policy; sampled violation rate
+src/dreamer.py        DreamerV3 one-step latent transition + deterministic actor:
+                      faithful, boundable torch port of RSSM._core + _prior + policy
+                      head at size1m; loads JAX checkpoints by key; closed loop z -> z'
+src/lyapunov_latent.py Latent V (E10 form) on (deter, stoch_flat), sample/V-fit for D1
 
 experiments/smoke_crown.py      4 correctness gates. Run first; stop if any fails.
 experiments/a0_v_feasibility.py Can V be fit at all? Run before A1.
 experiments/a1_sampling_gap.py  The audit.
+experiments/d1_smoke.py         CROWN boundability gate for the Dreamer one-step transition.
+experiments/d1_sampling_gap.py  The Dreamer audit (smoke-tested; heavy run on Colab).
 tests/test_region.py            Monte-Carlo check that the annulus is exact.
-colab/build_notebook.py         Generates colab/audit.ipynb (edit this, not the JSON).
+tests/test_dreamer_transition.py Transcription cross-check: port vs independent reference.
+colab/build_notebook.py         Generates colab/audit.ipynb, the Pendulum heavy run (edit this, not the JSON).
+colab/build_d1_notebook.py      Generates colab/d1_audit.ipynb, the Dreamer heavy run:
+                                train size1m on dmc_cartpole_balance, export weights +
+                                on-policy latent support, run the D1 audit end to end.
+                                auto_LiRPA is installed from the pinned GitHub commit
+                                5a098e8f (0.7.2), NOT PyPI: PyPI releases carry torch<1.13
+                                and cannot resolve against Colab's torch 2.11.
 ```
 
 The verifier is **reused, not reimplemented**: `certify_box` is loaded by path from

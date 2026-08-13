@@ -1,0 +1,572 @@
+% ============================================================================
+%  DRAFT MANUSCRIPT -- prepared for author review, NOT peer reviewed, NOT
+%  submitted anywhere. Before submission the authors must:
+%    (1) fill in real author names / affiliations / corresponding-author email
+%        (placeholders below are marked TODO),
+%    (2) verify every bibliography entry against the original source (years,
+%        volumes, pages) -- entries below are believed correct but were
+%        typeset from memory and are not a substitute for checking,
+%    (3) complete the exact citation details marked TODO in the bibliography,
+%        and
+%    (4) apply the target venue's official class file / template. This file
+%        uses IEEEtran (journal mode), the standard format for IEEE
+%        Transactions submissions. The natural homes for this material are
+%        IEEE Trans. on Neural Networks and Learning Systems, IEEE Control
+%        Systems Letters, or the IEEE Conf. on Decision and Control (CDC) /
+%        IEEE Conf. on Control Technology and Applications (CCTA).
+% ============================================================================
+\documentclass[journal]{IEEEtran}
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[hidelinks]{hyperref}
+\usepackage{cite}
+
+\newcommand{\zdyn}{\boldsymbol{z}}
+\newcommand{\deter}{d}
+\newcommand{\stoch}{s}
+
+\begin{document}
+
+\title{Stable and Verifiable Latent Dynamics for World Models: A Sampling-to-Proof
+Gap Audit and an Empirical Failure Atlas of Stabilization Attempts}
+
+% ---------------------------------------------------------------- authors --
+\author{
+  \IEEEauthorblockN{[TODO: Author Name(s)]}
+  \IEEEauthorblockA{[TODO: Affiliation, Department, Institution, City, Country]\\{}
+  [TODO: corresponding author email]}
+  \thanks{Manuscript draft, [TODO: month year]. This work reuses the
+  DreamerV3 one-step latent map, the auto\_LiRPA branch-and-bound verifier, and a
+  Hamiltonian-JEPA latent-dynamics benchmark. All measured numbers reported
+  here were produced on CPU with fixed seeds; the trained-model audit on a
+  DeepMind Control Suite task is [TODO: status] and is required before any
+  quantitative claim about DreamerV3 itself is made public.}
+}
+
+\markboth{DRAFT -- author review only, not for distribution}{}
+
+\maketitle
+
+% ----------------------------------------------------------------- abstract
+\begin{abstract}
+World models of the Dreamer family learn latent dynamics with no stability
+constraint on the imagined trajectory: long-horizon imagination can drift, and
+formal certification of the latent transition map is complicated by the
+categorical latent output. This paper makes three contributions toward stable
+and verifiable latent dynamics. First, we introduce a sampling-to-proof gap
+audit for the one-step latent map $\zdyn \mapsto \zdyn'$ under a frozen policy:
+a Lyapunov decrease condition, a large random-sampling baseline, and a
+branch-and-bound verifier with a reachability gate that discards
+off-distribution counterexamples. Second, we measure a structural verifier
+wall: interval bound propagation fails on the categorical output
+(softmax / sum-division) at any useful box width, so every branch-and-bound
+box is recorded as \emph{unknown} with its reason -- never as a violation and
+never as certification. Third, we report an empirical failure atlas from a
+controlled latent-space study: five documented mechanisms by which the
+optimizer routes around scalar stability constraints in a self-supervised
+latent space, including the decoupling of a spectrum-sum constraint from the
+leading Lyapunov exponent and the decoupling of finite-time spectral proxies
+from the asymptotic exponent. From the atlas we derive design rules for
+stabilization attempts and an evaluation standard that gates attractor-overlap
+metrics on rollout aliveness. All claims are stated with the exact object,
+region, and condition that produced them; nothing is carried over across
+systems.
+\end{abstract}
+
+% ------------------------------------------------------------------- intro
+\section{Introduction}
+
+Model-based reinforcement learning via world models has become a general
+approach to control: DreamerV3~\cite{hafner2025nature,hafner2023arxiv}
+masters over 150 tasks from a single configuration, and its latent
+imagination is the mechanism by which the policy is optimized. The world model
+learns a Recurrent State-Space Model (RSSM)~\cite{hafner2019icml} whose latent
+state evolves under the imagined actions, and the policy is trained on
+trajectories imagined in that latent space, never in the environment. This is
+precisely why the \emph{stability} of the latent dynamics matters: if the
+imagined trajectory drifts off-distribution, or diverges, or converges to a
+spurious fixed point, the policy is optimized against a model of a world that
+does not exist. DreamerV3 is trained without any constraint that the latent
+map be contractive, energy-bounded, or in any other sense stable, and the
+categorical latent output makes direct formal verification non-trivial.
+
+Two research lines have begun to address this gap. The first constrains the
+\emph{learned dynamics} so that imagination stays well behaved; the most
+recent example is Koopman Dreamer~\cite{koopman2026}, which replaces the
+deterministic latent core with spectrally constrained rotation--scaling
+blocks of bounded radius and derives a multi-step rollout-error bound. The
+second verifies a \emph{frozen} model after the fact using neural Lyapunov
+methods~\cite{chang2019,dawson2023} with sound bound
+propagation~\cite{zhang2018crown,xu2020autolirpa}. Both lines face a common,
+largely unexamined problem: how large is the gap between what random sampling
+finds and what a verifier can prove, and can scalar or spectral constraints
+actually shape the stability of a learned latent map?
+
+This paper addresses that problem. Its contributions are:
+
+\begin{itemize}
+\item \textbf{A sampling-to-proof gap audit for latent dynamics.} We certify
+the one-step latent map $\zdyn \mapsto \zdyn' = (\deter', \stoch')$ of a
+frozen DreamerV3-size model under a deterministic actor, where
+$\stoch'$ is the \emph{mean} of the prior categorical (the softmax output).
+The audit compares a large random-sampling baseline against
+branch-and-bound verification of a Lyapunov decrease condition, and gates any
+candidate violation on whether the model's own dynamics reach it
+(a reachability gate). Off-distribution counterexamples are discarded, not
+reported with a caveat.
+
+\item \textbf{A measured verifier wall on categorical latents.} Interval
+bound propagation cannot bind the categorical output at any useful width: the
+softmax / sum-division node asserts on non-positive relaxed denominators
+(measured: ``AssertionError in BoundReciprocal'' on the categorical mean).
+The audit probes this once and records every branch-and-bound box as
+\emph{unknown} with the reason, so the wall is measured rather than assumed.
+
+\item \textbf{An empirical failure atlas of stabilization attempts.} In a
+controlled latent-space study (a Hamiltonian-JEPA predictor trained end to
+end on chaotic Lorenz-63 data under a nonlinear coordinate warp), we isolate
+five mechanisms by which the optimizer satisfies scalar stability constraints
+without producing stable dynamics: (1) trivial representation freeze,
+(2) scale-conditioning paradox, (3) coordinate-skew loophole plus a dead
+saddle in dissipation-matrix learning, (4) spectrum-sum versus leading
+exponent decoupling, and (5) finite-time spectral traps. Each is annotated at
+its mechanism site.
+
+\item \textbf{Design rules and an evaluation standard.} From the atlas we
+derive concrete rules for stabilization attempts (what to constrain, what to
+initialize, what to gate) and argue that attractor-overlap metrics
+(Chamfer/Hausdorff distance to the encoded manifold) must be gated on rollout
+aliveness, because a frozen predictor posts near-perfect overlap while being
+dynamically dead.
+\end{itemize}
+
+\emph{Honest framing.} This is a methods and measurement paper. The verifier
+wall and the failure atlas are measured results; the direct application to a
+\emph{trained} DreamerV3 on a control task is [TODO: pending GPU audit], and
+no quantitative claim about DreamerV3 itself is made until that audit lands.
+The latent-space study uses Lorenz-63, which is not a natural GENERIC system;
+the energy, entropy, and dissipation quantities learned there are proxies, and
+we claim on-attractor stability and invariant recovery, not recovery of true
+thermodynamics.
+
+% --------------------------------------------------------------- background
+\section{Background and Problem Setting}
+
+\subsection{The RSSM and the one-step latent map}
+
+DreamerV3's world model factorizes the transition into a deterministic
+recurrent core and a stochastic posterior over discrete classes:
+\begin{equation}
+  \deter_t = f_\theta(\deter_{t-1}, \stoch_{t-1}, a_{t-1}), \qquad
+  \stoch_t \sim q_\phi(\stoch_t \mid \deter_t, o_t),
+\end{equation}
+with a prior $\stoch_t \sim p_\phi(\stoch_t \mid \deter_t)$ used at
+imagination time. In this paper the audited object is the one-step latent map
+under a frozen deterministic actor $\pi$:
+\begin{equation}
+  \zdyn = (\deter, \stoch) \;\mapsto\;
+  \zdyn' = \big(\deter',\; \mathrm{softmax}(\mathrm{logits}')\big),
+  \qquad
+  \deter' = \mathrm{core}\big(\deter, \pi(\zdyn)\big),
+  \label{eq:onestep}
+\end{equation}
+where the stochastic output is replaced by the \emph{mean} of the prior
+categorical, and $\pi(\zdyn) = \tanh(\mathrm{mean}(\mathrm{actor}))$. The
+model is audited as trained; only the Lyapunov candidate $V$ moves. Nothing
+about the imagined rollout is certified, and nothing larger than the
+DreamerV3 size-1M configuration (deter 512, hidden 64, stoch 32$\times$4
+classes) is considered.
+
+\subsection{Why stability of this map matters}
+
+The policy is optimized on imagined trajectories driven by the prior
+transition. If the map in \eqref{eq:onestep} admits expanding directions,
+long-horizon imagination accumulates error and the imagined distribution
+drifts from the posterior distribution seen at training time -- the
+posterior/prior mismatch that recent work
+attempts to reduce~\cite{koopman2026,roeder2025}. Stability of the latent map
+is therefore not a theoretical nicety but a prerequisite for reliable
+planning in real systems, and for any safety argument about policies trained
+on imagined data.
+
+\subsection{Verification machinery}
+
+We verify the Lyapunov decrease condition
+\begin{equation}
+  \mathrm{cond}(\zdyn) = V(\zdyn) - V(\zdyn') > 0
+  \label{eq:cond}
+\end{equation}
+over a box region $\mathcal{B}$ built from the model's own on-policy latent
+states. Sampling draws $\zdyn \sim \mathcal{B}$ and evaluates
+\eqref{eq:cond} exactly. Branch-and-bound uses
+CROWN-style~\cite{zhang2018crown} interval and linear relaxation bounds as
+implemented in auto\_LiRPA~\cite{xu2020autolirpa}; the verifier source is
+pinned by the SHA-256 of the driver (the exact artifact that produced a
+result). A verdict is one of three: \emph{violation} (a counterexample the
+model demonstrably reaches), \emph{certified} (the bound proves the condition
+on the whole box), or \emph{unknown} (bounds stayed loose, no counterexample
+found). \emph{unknown} is verifier incompleteness: it is never evidence of
+safety, and it is never a gap and never a partial finding.
+
+\subsection{Related work on latent-space structure}
+
+On the representation-learning side, JEPA-style objectives~\cite{assran2023,
+maes2026} use anti-collapse regularizers such as SIGReg (sketched isotropic
+Gaussian regularization via characteristic-function matching) to keep latent
+embeddings full-rank without a teacher network. The latent-space study in
+Section~\ref{sec:atlas} builds directly on this line: it asks what happens
+when one additionally imposes \emph{physical} structure (Hamiltonian energy
+conservation, metriplectic dissipation) on the latent dynamics of such a
+model. On the dynamics side, spectral constraints on recurrent
+dynamics~\cite{miller2019} and the recent Koopman Dreamer
+backbone~\cite{koopman2026} bound modal radii to control error accumulation;
+Section~\ref{sec:rules} connects the failure atlas to exactly these designs.
+
+% ------------------------------------------------------- the audit (method)
+\section{The Sampling-to-Proof Gap Audit}
+\label{sec:audit}
+
+The audit answers one question: are there latent states where a large
+random-sampling audit of the decrease condition \eqref{eq:cond} finds
+nothing, yet branch-and-bound finds a genuine violation that the model's own
+dynamics actually reach? If yes, that state is a sampling-to-proof gap and
+the strongest possible evidence about the limit of empirical evaluation.
+
+\subsection{Region construction}
+
+The region is built \emph{from} the model's own latent states: a frozen
+checkpoint is rolled out on-policy and the posterior latents are recorded;
+the certified region is the coordinate box around those latents. The region
+is therefore on-distribution by construction. The certified map
+\eqref{eq:onestep} is the prior-mean surrogate; this distinction is recorded
+in the artifact and never conflated.
+
+\subsection{Procedure}
+
+\begin{algorithm}[t]
+\caption{Sampling-to-proof gap audit}
+\begin{algorithmic}[1]
+\Require Frozen model, on-policy latent support $\mathcal{S}$, box
+$\mathcal{B} \supseteq \mathcal{S}$, Lyapunov candidate $V$
+\State Fit $V$ to minimize \eqref{eq:cond} violations on samples from
+$\mathcal{B}$ (gradient training; the model is frozen)
+\State \textbf{Sampling baseline:} draw $N$ i.i.d.\ samples from
+$\mathcal{B}$, evaluate \eqref{eq:cond}; record worst violation and count
+\State \textbf{Reachability gate:} for each candidate violation, verify the
+model's closed-loop dynamics reach it (trajectory through the region to the
+candidate)
+\State \textbf{Branch-and-bound:} decompose $\mathcal{B}$ into annulus boxes
+around the latent fixed point; run the verifier per box with a budget
+\State \textbf{Wall gate:} probe the categorical output once; if the interval
+pass asserts on softmax/sum-division, record every box as \emph{unknown} with
+the reason
+\State \textbf{Verdict:} $\texttt{gap\_demonstrated} = $ sampling found
+nothing \emph{and} branch-and-bound found a reachable violation
+\end{algorithmic}
+\end{algorithm}
+
+The branch-and-bound region is an annulus around the latent fixed point
+$\zdyn^*$, decomposed into $2k$ boxes by holing the $k$ coordinate
+dimensions with the largest halfwidths, so the number of boxes does not scale
+with the latent dimension. The annulus excludes the fixed point itself,
+where $\mathrm{cond}(\zdyn^*) = 0$ by construction.
+
+% --------------------------------------------------- the wall (measured)
+\section{The Verifier Wall on Categorical Latents}
+\label{sec:wall}
+
+The certified graph contains the categorical output
+$\stoch' = \mathrm{softmax}(\mathrm{logits}')$, i.e.\ an
+$\exp / \sum \exp$ with a division by the relaxed sum. Interval bound
+propagation on this node asserts whenever the relaxed logits interval spans a
+region where the softmax denominator can be non-positive in the bound
+computation. At the measured vacuity of the intermediate bounds, this
+happens on the first box (``AssertionError in BoundReciprocal''), and the
+\emph{same} structural failure repeats identically on every box. Because the
+bound-graph build dominates the per-box cost (measured: $\sim$4 minutes for
+the graph trace on a size-1M graph on CPU), running the full branch-and-bound
+without the wall gate wastes hours to rediscover the same assertion.
+
+The audit therefore probes the wall once, then records every box as
+\emph{unknown} with the reason ``categorical output not interval-bindable at
+this width''. This is the guardrail-predicted boundary of the verification
+toolchain, now \emph{measured} rather than assumed. The sampling baseline is
+the empirical result; a sampling violation is the only thing that can become
+a finding, and it must survive the reachability gate first.
+
+On the smoke configuration (weight-initialized surrogate, not a trained
+model), the full pipeline runs end to end on CPU: the latent fixed point
+converges (residual $2.98\times10^{-8}$), the region holds 83.8\% of
+steady-state latents, sampling finds 0/12\,866 violations (worst condition
+$+2.2\times10^{-3}$), and the wall is recorded with
+$\texttt{gap\_demonstrated} = \mathtt{false}$. \emph{None of these numbers
+describe a trained model}; they establish that the pipeline is sound and
+reproducible, which is their only claim. [TODO: trained-model audit on
+dm\_control cartpole\_balance; expected verdict on the categorical wall is
+\emph{unknown}, which is verifier incompleteness and not a finding.]
+
+% ----------------------------------------------------------- the atlas
+\section{The Failure Atlas of Latent-Space Stabilization}
+\label{sec:atlas}
+
+The wall says the frozen model cannot be certified directly. The remaining
+question is whether it can be \emph{stabilized} -- and here we report the
+empirical atlas from a controlled study: a Hamiltonian-JEPA predictor trained
+end to end from data on chaotic Lorenz-63 under a nonlinear coordinate warp,
+in five ablation arms (B/C/D/E/F) with matched data and steps. The study is
+fully reproducible on CPU (fixed seeds, one command). The atlas is the
+\emph{negative result}: imposing physical / thermodynamic constraints inside
+a self-supervised latent space does not, by itself, yield physical dynamics,
+because the optimizer routes around each scalar constraint through a
+geometric exploit.
+
+\begin{table}[t]
+\caption{Documented failure modes of latent-space stabilization
+(Lorenz-63, nonlinear warp; reproduced on CPU in progress at draft time).}
+\label{tab:atlas}
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\# & Mode & Measured signature \\
+\midrule
+1 & Representation freeze &
+  motion $\sim10^{-3}$ vs target $\sim0.4$; $\lambda_1$-penalty $\sim 0$ \\
+2 & Scale-conditioning paradox &
+  raw proxy spread $\sim0.036$ vs $\|\partial H/\partial p\| \sim 3.2$
+  (a $\sim30\times$ conflict) \\
+3 & Skew loophole + dead R saddle &
+  $\mathrm{tr}(R)/n = 0.00000$ in every naive run; R off until
+  nonzero init \\
+4 & Sum-vs-$\lambda_1$ decoupling &
+  contraction $-12.8$ while $\lambda_1$ blows up to $+3.5$
+  (true $\sim0.88$); confirmed 4$\times$ \\
+5 & Finite-time spectral trap &
+  short-horizon $\hat\lambda_1 \to -0.17$ while true
+  200-step $\lambda_1 = +1.44$ (opposite sign) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Each mode is annotated at its mechanism site in the study source; the
+headlines are:
+
+\textbf{(1) Freeze.} Multi-step alignment is minimized by a predictor that
+does not move: compounding $K$-step error makes motion locally costlier than
+none, and the field gradients collapse. A horizon curriculum and a detached
+motion-magnitude penalty are partial mitigations.
+
+\textbf{(2) Scale-conditioning paradox.} Matching the raw magnitude of a
+kinetic energy proxy clamps the dynamics: the proxy's spread is $\sim30\times$
+below what the integrator needs, so magnitude matching freezes the model.
+Comparing \emph{z-scores} of both sides -- keeping only the shape/correlation
+constraint -- restores $O(1)$ loss and frees the scale.
+
+\textbf{(3) Skew loophole and dead R saddle.} A state-dependent skew
+$\mathbf{J}(\zdyn)$ is not divergence-free, so it can supply demanded volume
+contraction with no dissipation at all, leaving $\mathbf{R}$ off; and
+$\mathbf{R} = \mathbf{L}\mathbf{L}^\top$ with $\mathbf{L}$ zero-initialized
+has $\partial \mathbf{R}/\partial \mathbf{L} = 0$ at $\mathbf{L}=0$, a dead
+saddle no gradient can lift. Both must be closed (fixed constant canonical
+skew; small nonzero $\mathbf{L}$ init) before dissipation engages
+($\mathrm{tr}(R)/n \sim 5.6$, contraction $-13.667$).
+
+\textbf{(4) Sum-vs-$\lambda_1$ decoupling.} Pinning the divergence pins the
+\emph{sum} of the Lyapunov spectrum -- an invariant -- but the sum does not
+pin any individual exponent. Model E reaches strong contraction while
+$\lambda_1$ blows up to $+3.5$ (true $\sim0.88$): the negative exponents
+compensate. Confirmed four times ($\lambda_1 \in \{-0.42, +1.44, +3.5,
++4.29\}$, all with the ``correct'' sum). A scalar volume constraint is
+structurally incapable of shaping the leading exponent. This is the direct
+caution for spectral designs that constrain aggregate spectrum information.
+
+\textbf{(5) Finite-time spectral trap.} At short horizons the finite-time QR
+exponent is decoupled from the asymptotic $\lambda_1$: training drives
+$\hat\lambda_1$ to $-0.17$ while the true 200-step exponent is $+1.44$
+(opposite sign). At long horizons the proxy is trainable but nothing
+constrains global boundedness: the eval rollout diverges to $+\infty$. The
+trap moves from ``wrong proxy'' to ``right proxy, unbounded global
+trajectory''.
+
+\textbf{The overlap trap (evaluation standard).} Chamfer/Hausdorff distance to
+the encoded attractor \emph{rewards} a frozen predictor: a stationary point
+inside the attractor cloud scores near-perfect while being dynamically dead.
+Geometric overlap must be gated on the rollout being alive and chaotic
+($\lambda_1 > 0$ and a sane motion ratio), or replaced by a
+motion-invariant statistic.
+
+\emph{Transfer caveat.} The atlas is measured on Lorenz-63 latent dynamics,
+not on DreamerV3's RSSM latents. Its role here is to make the failure modes
+\emph{concrete and checkable}; the D1 audit (Section~\ref{sec:audit}) is the
+tool that tests whether the same exploits appear in a trained world model's
+latent space. That test is the paper's primary open item.
+
+% ------------------------------------------------------------- design rules
+\section{Design Rules for Stabilizing Latent Dynamics}
+\label{sec:rules}
+
+From the wall and the atlas we derive the following rules. Each is stated
+with the failure mode it is designed to avoid.
+
+\begin{enumerate}
+\item \textbf{Certify a verifiable surrogate, not the categorical output.}
+The categorical output is not interval-bindable at useful width
+(Section~\ref{sec:wall}). Any certification must target the deterministic
+component of the latent map, or a structurally verifiable surrogate, with
+the stochastic output treated as the documented boundary of the toolchain.
+\item \textbf{Constrain modes, not sums.} A scalar volume/spectrum-sum
+constraint cannot shape the leading Lyapunov exponent (failure 4). Spectral
+designs should constrain per-mode radii -- as in
+Koopman Dreamer~\cite{koopman2026} -- and must verify the \emph{leading}
+exponent directly, not the aggregate.
+\item \textbf{Break dead saddles with principled initialization.} Any
+factorized dissipation or learned structure that starts at zero and is
+penalized toward engagement needs a nonzero initialization and a
+gradient-path check (failure 3).
+\item \textbf{Use shape constraints, not raw magnitudes.} Scale-free
+(z-score / correlation) anchors decouple magnitude from shape and prevent
+scale-starvation (failure 2).
+\item \textbf{Curriculize the horizon and gate evaluation on aliveness.}
+Short-horizon objectives freeze the predictor (failure 1) and finite-time
+proxies decouple from asymptotic exponents (failure 5); evaluation must
+include a long-horizon rollout, an aliveness gate, and a leading-exponent
+check, and must never report attractor overlap without it (overlap trap).
+\item \textbf{Report the gap honestly.} \emph{unknown} verdicts, loose
+bounds, and walls are verifier incompleteness. They are never evidence of
+safety and never a gap. Only a reachable violation counts, and it must
+survive a reachability gate.
+\end{enumerate}
+
+% ---------------------------------------------------------------- discussion
+\section{Discussion and Limitations}
+
+\emph{What is measured.} The verifier wall is a measured property of
+auto\_LiRPA~0.7.2 on the categorical output, reproducible on CPU in minutes.
+The failure atlas is a measured, reproducible negative result on a controlled
+latent-space benchmark. The audit pipeline is measured end to end on a
+surrogate.
+
+\emph{What is not yet measured.} A trained DreamerV3 model's latent dynamics
+have not yet been audited; that audit requires a GPU training run and is the
+paper's primary open item. The transfer of the failure modes from Lorenz
+latents to RSSM latents is a hypothesis the audit is designed to test, not a
+claim. \emph{Unknown} verdicts on the categorical wall are expected and are
+not findings.
+
+\emph{Scope.} The certified object is the one-step prior-mean map under a
+frozen policy. Nothing about imagined multi-step rollouts is certified, and
+nothing about the stochastic posterior. The region is built from on-policy
+posterior latents; the certified map is the prior-mean surrogate. These
+distinctions are recorded in every artifact and never conflated.
+
+\emph{Relationship to the Dreamer team's problem.} World-model-based control
+deployed on physical systems needs latent trajectories that stay bounded and
+on-distribution over planning horizons, and needs a way to argue about that
+formally. This paper contributes the measurement machinery (the gap audit),
+the obstacle (the categorical wall), and the cautionary evidence (the
+failure atlas) that any stabilization design must confront. It does not
+claim to know the team's internal priorities; it claims only that these are
+the questions any stability argument for a Dreamer-style latent space must
+answer.
+
+% --------------------------------------------------------------- conclusion
+\section{Conclusion}
+
+We presented a sampling-to-proof gap audit for the latent dynamics of
+Dreamer-style world models, measured the structural wall that interval bound
+propagation hits on categorical latent outputs, and reported an empirical
+failure atlas of stabilization attempts in latent space together with design
+rules and an evaluation standard derived from it. The contribution is honest
+measurement and a checkable negative result, in a form that makes the
+obstacles to stable, verifiable latent dynamics concrete. The next step --
+the trained-model audit -- is a GPU run, and the atlas provides the exact
+hypotheses it should test.
+
+% ------------------------------------------------------------- references
+\begin{thebibliography}{99}
+
+\bibitem{hafner2025nature}
+D.~Hafner, J.~Pasukonis, J.~Ba, and T.~Lillicrap,
+``Mastering diverse control tasks through world models,''
+\emph{Nature}, vol.~[TODO: volume], pp.~[TODO: pages], 2025.
+[TODO: verify volume/pages/DOI.]
+
+\bibitem{hafner2023arxiv}
+D.~Hafner, J.~Pasukonis, J.~Ba, and T.~Lillicrap,
+``Mastering diverse domains through world models,''
+arXiv preprint arXiv:2301.04104, 2023.
+
+\bibitem{hafner2019icml}
+D.~Hafner, T.~Lillicrap, I.~Fischer, R.~Villegas, D.~Ha, and H.~Lee,
+``Learning latent dynamics for planning from pixels,''
+in \emph{Proc. Int. Conf. on Machine Learning (ICML)}, 2019.
+
+\bibitem{hafner2025dreamer4}
+D.~Hafner, \emph{et al.},
+``Dreamer 4,'' [TODO: venue -- 2025 oral; verify exact title/venue],
+2025.
+
+\bibitem{koopman2026}
+J.~Li, X.~Zhang, H.~Xie, Y.~Lan, W.~Pan, and X.~Xu,
+``Koopman Dreamer: Spectrally constrained latent dynamics for stable
+world-model imagination,''
+arXiv preprint arXiv:2607.19719, 2026.
+
+\bibitem{roeder2025}
+F.~R\"oder, \emph{et al.},
+``Dynamics-aligned latent imagination in contextual world models (DALI),''
+in \emph{Proc. NeurIPS}, 2025.
+[TODO: verify author list.]
+
+\bibitem{zhang2018crown}
+H.~Zhang, T.-W.~Weng, P.-Y.~Chen, C.-J.~Hsieh, and L.~Daniel,
+``Efficient neural network robustness certification with general activation
+functions,''
+in \emph{Proc. NeurIPS}, 2018.
+
+\bibitem{xu2020autolirpa}
+K.~Xu, \emph{et al.},
+``auto\_LiRPA: Automatic linear relaxation based perturbation analysis for
+neural networks,''
+arXiv preprint arXiv:2002.12920, 2020.
+
+\bibitem{chang2019}
+Y.-C.~Chang, N.~Roohi, and S.~Gao,
+``Neural Lyapunov control,''
+in \emph{Proc. NeurIPS}, 2019.
+
+\bibitem{dawson2023}
+C.~Dawson, S.~Gao, and C.~Fan,
+``Safe control with learned certificates: A survey of neural Lyapunov,
+barrier, and contraction methods,''
+arXiv preprint arXiv:2202.11762, 2023.
+
+\bibitem{assran2023}
+M.~Assran, \emph{et al.},
+``Self-supervised learning from images with a joint-embedding predictive
+architecture,''
+in \emph{Proc. CVPR}, 2023.
+
+\bibitem{maes2026}
+L.~Maes, Q.~Le~Lidec, D.~Scieur, Y.~LeCun, and R.~Balestriero,
+``LeWorldModel: Stable end-to-end joint-embedding predictive architecture
+from pixels,''
+arXiv preprint arXiv:2603.19312, 2026.
+
+\bibitem{miller2019}
+J.~Miller and M.~Hardt,
+``Stable recurrent models,''
+in \emph{Proc. ICLR}, 2019.
+
+\end{thebibliography}
+
+\vspace{1em}
+\noindent\textbf{Draft status.} Authors TODO; references to verify;
+trained-model audit [TODO: GPU run]; atlas reproduction on CPU in progress
+at draft time. Nothing in this draft has been submitted or peer reviewed.
+
+\end{document}
