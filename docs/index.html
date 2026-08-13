@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="description" content="Stable and verifiable latent dynamics for world models: a sampling-to-proof gap audit of the DreamerV3 latent transition map, a measured verifier wall on the categorical output, and a five-mode failure atlas of latent-space stabilization attempts.">
+  <meta name="keywords" content="DreamerV3, world models, latent dynamics, Lyapunov, branch-and-bound, CROWN, auto_LiRPA, RSSM, verification, stability">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stable and Verifiable Latent Dynamics for World Models</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/computer-modern/cmu-serif.css">
+  <script>
+    MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+
+  <style>
+    :root {
+      --ink: #1a1a1a;
+      --muted: #555;
+      --faint: #8c8e90;
+      --panel: #f8f8f8;
+      --border: #c4c6c8;
+      --link: #226999;
+      --accent: #1a1a1a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { background: #fff; }
+    body {
+      font-family: 'CMU Serif', Georgia, serif;
+      font-weight: 500;
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container { max-width: 920px; margin: 0 auto; padding: 0 20px; }
+    .has-text-centered { text-align: center; }
+    .has-text-justified { text-align: justify; }
+
+    /* ---------- Hero ---------- */
+    .hero { padding: 4.2rem 0 1.6rem; }
+    .publication-title {
+      font-family: 'CMU Serif', Georgia, serif;
+      font-weight: 700 !important;
+      line-height: 1.12;
+      letter-spacing: 0;
+      font-size: 2.3rem;
+      text-wrap: balance;
+    }
+    .publication-sub {
+      margin-top: 1.1rem;
+      font-family: 'Inter', -apple-system, sans-serif;
+      font-size: 1.02rem;
+      color: var(--muted);
+      line-height: 1.5;
+      max-width: 60rem;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .tagline {
+      margin-top: 0.9rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.92rem;
+      color: var(--ink);
+      letter-spacing: 0.01em;
+    }
+    .authors {
+      margin-top: 1.2rem;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.95rem;
+      color: var(--ink);
+    }
+    .affiliations {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+    .links-row {
+      margin-top: 1.4rem;
+      display: flex;
+      gap: 0.7rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-block;
+      padding: 0.45rem 1.05rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.86rem;
+      color: var(--ink);
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .btn:hover { background: var(--panel); border-color: var(--ink); text-decoration: none; }
+
+    /* ---------- Sections ---------- */
+    .section { padding: 2.4rem 0 0.6rem; }
+    .title {
+      font-family: 'CMU Serif', Georgia, serif;
+      font-weight: 700;
+      font-size: 1.35rem;
+      margin-bottom: 0.9rem;
+      letter-spacing: 0;
+    }
+    .section p { margin-bottom: 0.9rem; line-height: 1.62; }
+    .section ul, .section ol { margin: 0 0 0.9rem 1.4rem; line-height: 1.62; }
+    .section li { margin-bottom: 0.35rem; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .faint { color: var(--faint); font-size: 0.85rem; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1.1rem 1.3rem;
+      margin: 0 0 1.1rem;
+      font-size: 0.95rem;
+    }
+    .panel code {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.85rem;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 0.05rem 0.3rem;
+    }
+
+    /* ---------- Math ---------- */
+    .math { overflow-x: auto; margin: 0.8rem 0 1.1rem; }
+
+    /* ---------- Tables ---------- */
+    table { border-collapse: collapse; margin: 0.4rem auto 1.2rem; width: 100%; }
+    th, td {
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 0.45rem 0.6rem;
+      text-align: left;
+      font-size: 0.92rem;
+      line-height: 1.4;
+    }
+    th { font-weight: 600; border-top: 1.5px solid var(--ink); }
+    thead tr:last-child th { border-bottom: 1px solid var(--ink); }
+    tbody tr:last-child td { border-bottom: 1.5px solid var(--ink); }
+
+    /* ---------- Footer ---------- */
+    footer { margin-top: 3rem; padding: 1.6rem 0 2.4rem; border-top: 1px solid var(--border); }
+    footer .container { font-family: 'Inter', sans-serif; font-size: 0.82rem; color: var(--muted); text-align: center; line-height: 1.7; }
+
+    @media (max-width: 640px) {
+      .publication-title { font-size: 1.6rem; }
+      .hero { padding: 2.6rem 0 1.2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="container has-text-centered">
+    <h1 class="publication-title">
+      Stable and Verifiable Latent Dynamics<br>for World Models
+    </h1>
+    <p class="publication-sub">
+      A sampling-to-proof gap audit of the DreamerV3 latent transition map: where a
+      large random-sampling audit of a Lyapunov decrease condition finds nothing,
+      but branch-and-bound verification hits a structural wall on the categorical
+      output — and why naive stabilization attempts fail.
+    </p>
+    <p class="tagline">the categorical output is a verifier wall · the optimizer is the atlas</p>
+    <div class="authors">Sehaj Randhir Singh</div>
+    <div class="affiliations">Independent researcher; partial affiliation with NYU Tandon School of Engineering</div>
+    <div class="links-row">
+      <a class="btn" href="papers/DREAMER_LATENT_STABILITY_IEEE.pdf">IEEE format</a>
+      <a class="btn" href="papers/DREAMER_LATENT_STABILITY_NMI.pdf">NMI Letters format</a>
+      <a class="btn" href="https://github.com/sehajr-singhs/dreamerv3-latent-stability">GitHub (code + data)</a>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+
+  <section class="section">
+    <h2 class="title">Abstract</h2>
+    <p class="has-text-justified">
+      World models of the Dreamer family optimize policies over latent trajectories
+      imagined by a recurrent state-space model, yet nothing in their training
+      constrains those latent dynamics to be stable, and the categorical latent
+      output blocks direct formal certification. We report two measured obstacles
+      and an evaluation standard. First, a sampling-to-proof gap audit of the
+      one-step latent map under a frozen actor: a Lyapunov decrease condition, a
+      large random-sampling baseline, and branch-and-bound verification with a
+      reachability gate. Second, a measured verifier wall: interval bound
+      propagation asserts on the categorical output at any useful width, so every
+      branch-and-bound box is recorded as <em>unknown</em> with its reason — never
+      as a violation and never as certification. Third, a five-mode failure atlas
+      from a controlled latent-space study shows why naive stability constraints
+      fail, from which we derive design rules and an aliveness-gated evaluation
+      standard. All claims name the object, region, and condition that produced
+      them.
+    </p>
+    <p class="tagline muted" style="font-family:'IBM Plex Mono',monospace; font-size:0.85rem;">
+      TL;DR: DreamerV3's latent map is sampled-clean but not provable (categorical wall), and
+      bolting stability onto it fails five documented ways — here is the audit, the wall,
+      the atlas, and the rules.
+    </p>
+  </section>
+
+  <section class="section">
+    <h2 class="title">The audited object</h2>
+    <p>
+      DreamerV3's world model factorizes the transition into a deterministic
+      recurrent core and a stochastic posterior over discrete classes. The object
+      this project audits is the one-step latent map under a frozen deterministic
+      actor,
+    </p>
+    <div class="math">
+      \[
+      \mathbf{z} = (d, s) \;\mapsto\;
+      \mathbf{z}' = \big(d',\; \mathrm{softmax}(\mathrm{logits}')\big),
+      \qquad
+      d' = \mathrm{core}\big(d,\; \pi(\mathbf{z})\big),
+      \]
+    </div>
+    <p>
+      where the stochastic output is replaced by the <em>mean</em> of the prior
+      categorical, \(\pi(\mathbf{z}) = \tanh(\mathrm{mean}(\mathrm{actor}))\), and
+      the model is audited <em>as trained</em> — only the Lyapunov candidate
+      \(V\) moves. Nothing about the imagined multi-step rollout is certified,
+      and nothing larger than the size-1M configuration (deter 512, hidden 64,
+      stoch \(32 \times 4\)) is considered.
+    </p>
+    <p>
+      The condition is the Lyapunov decrease
+      \(\mathrm{cond}(\mathbf{z}) = V(\mathbf{z}) - V(\mathbf{z}') > 0\), verified
+      over a region built <em>from the model's own on-policy latent states</em>:
+      the certified region is on-distribution by construction, and the certified
+      map (the prior-mean surrogate) is recorded distinctly from the region's
+      source, never conflated.
+    </p>
+  </section>
+
+  <section class="section">
+    <h2 class="title">The sampling-to-proof gap audit</h2>
+    <p class="has-text-justified">
+      The audit asks one question: are there latent states where a large
+      random-sampling audit of the decrease condition finds nothing, yet
+      branch-and-bound verification finds a genuine violation that the model's own
+      dynamics actually reach? The pipeline: fit \(V\) on samples from the region;
+      run a sampling baseline (\(N\) i.i.d. draws, worst condition and count);
+      run branch-and-bound over an annulus around the latent fixed point (holed
+      along the \(k\) widest dimensions, so box count scales with \(k\), not with
+      the 640-D latent); apply a <em>reachability gate</em> to every candidate
+      violation — off-distribution counterexamples are discarded, not reported
+      with a caveat.
+    </p>
+    <div class="panel">
+      <strong>The verdict is three-way:</strong>
+      <code>violation</code> (a counterexample the model demonstrably reaches) ·
+      <code>certified</code> (bounds prove the condition on the whole box) ·
+      <code>unknown</code> (bounds stayed loose, no counterexample found).
+      <br><br>
+      <em>unknown</em> is verifier incompleteness: it is <strong>never</strong>
+      evidence of safety, and it is <strong>never</strong> a gap and
+      <strong>never</strong> a partial finding.
+      <code>gap_demonstrated</code> is true only when sampling found nothing
+      <em>and</em> branch-and-bound found a reachable violation.
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="title">The measured verifier wall</h2>
+    <p class="has-text-justified">
+      The certified graph contains the categorical output
+      \(\mathbf{s}' = \mathrm{softmax}(\mathrm{logits}')\), i.e. an
+      \(\exp / \sum \exp\) with a division by the relaxed sum. Interval bound
+      propagation asserts on this node whenever the relaxed logits interval spans
+      a region where the softmax denominator can be non-positive in the bound
+      computation — at the measured vacuity of intermediate bounds, this happens
+      on the first box (<code>AssertionError in BoundReciprocal</code>), and the
+      same structural failure repeats identically on every box. Because the
+      bound-graph build dominates per-box cost (~4 minutes on a size-1M graph on
+      CPU), running full branch-and-bound without the wall gate wastes hours to
+      rediscover the same assertion.
+    </p>
+    <p>
+      The audit therefore probes the wall <em>once</em> and records every box as
+      <code>unknown</code> with the reason — never certified, never a violation.
+      The sampling baseline is the empirical result, and a sampling violation is
+      the only thing that can become a finding.
+    </p>
+    <table>
+      <thead><tr><th>Measured audit record (smoke configuration)</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>Latent fixed point residual</td><td>\(2.98 \times 10^{-8}\) (converged)</td></tr>
+        <tr><td>Region coverage of steady-state latents</td><td>83.8%</td></tr>
+        <tr><td>Sampling baseline</td><td>0 / 12,866 violations</td></tr>
+        <tr><td>Worst sampling condition</td><td>\(+2.2 \times 10^{-3}\)</td></tr>
+        <tr><td>Branch-and-bound boxes</td><td>4 (k-dim hole)</td></tr>
+        <tr><td>Wall record</td><td>every box <em>unknown</em>: categorical output</td></tr>
+        <tr><td>Verdict</td><td><code>gap_demonstrated = false</code></td></tr>
+      </tbody>
+    </table>
+    <p class="faint">
+      The smoke configuration is a weight-initialized surrogate, not a trained
+      model; its numbers establish that the pipeline is sound and reproducible,
+      which is their only claim. The trained-model audit on dm_control
+      cartpole_balance is the open item (GPU run); on the categorical wall its
+      expected verdict is <em>unknown</em>, which is verifier incompleteness, not
+      a finding.
+    </p>
+  </section>
+
+  <section class="section">
+    <h2 class="title">The failure atlas of latent-space stabilization</h2>
+    <p class="has-text-justified">
+      The wall says the frozen model cannot be certified directly. The remaining
+      question is whether it can be <em>stabilized</em> — and the atlas is the
+      answer, from a controlled latent-space study: a JEPA predictor with a
+      Hamiltonian / metriplectic structure trained end to end on chaotic
+      Lorenz-63 under a nonlinear coordinate warp, five ablation arms, matched
+      data and steps. Imposing physical or thermodynamic constraints inside a
+      self-supervised latent space does not, by itself, yield physical dynamics:
+      the optimizer routes around each scalar constraint through a geometric
+      exploit.
+    </p>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Mode</th><th>Measured signature</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>Representation freeze</td><td>motion \(\sim 10^{-3}\) vs target \(\sim 0.4\)</td></tr>
+        <tr><td>2</td><td>Scale-conditioning paradox</td><td>proxy spread \(\sim 0.036\) vs \(\|\partial H/\partial p\| \sim 3.2\)</td></tr>
+        <tr><td>3</td><td>Skew loophole + dead R saddle</td><td>\(\mathrm{tr}(R)/n = 0.00000\) in every naive run</td></tr>
+        <tr><td>4</td><td>Sum-vs-\(\lambda_1\) decoupling</td><td>contraction \(-12.8\), \(\lambda_1\) blows up to \(+3.5\) (true \(\sim 0.88\))</td></tr>
+        <tr><td>5</td><td>Finite-time spectral trap</td><td>short-horizon \(\hat\lambda_1 \to -0.17\), true 200-step \(+1.44\)</td></tr>
+      </tbody>
+    </table>
+    <p class="has-text-justified">
+      The headline is failure 4: pinning the divergence pins the <em>sum</em> of
+      the Lyapunov spectrum, but the sum does not pin any individual exponent —
+      confirmed four times, all with the "correct" sum. A scalar volume
+      constraint is structurally incapable of shaping the leading exponent. And
+      the <em>overlap trap</em>: Chamfer/Hausdorff distance to the encoded
+      attractor <em>rewards</em> a frozen predictor, so geometric overlap must be
+      gated on the rollout being alive and chaotic (\(\lambda_1 > 0\), sane motion
+      ratio) — or replaced by a motion-invariant statistic.
+    </p>
+  </section>
+
+  <section class="section">
+    <h2 class="title">Design rules</h2>
+    <ol>
+      <li><strong>Certify a verifiable surrogate, not the categorical output.</strong>
+        Certification must target the deterministic component of the latent map or
+        a structurally verifiable surrogate; the stochastic output is the
+        documented boundary of the toolchain.</li>
+      <li><strong>Constrain modes, not sums.</strong> Constrain per-mode radii and
+        verify the leading exponent directly, never the aggregate.</li>
+      <li><strong>Break dead saddles with principled initialization.</strong>
+        Factorized dissipation needs a nonzero init and a gradient-path check.</li>
+      <li><strong>Use shape constraints, not raw magnitudes.</strong> Scale-free
+        (z-score / correlation) anchors prevent scale-starvation.</li>
+      <li><strong>Curriculize the horizon and gate evaluation on aliveness.</strong>
+        Long-horizon rollouts, an aliveness gate, a leading-exponent check — never
+        attractor overlap without them.</li>
+      <li><strong>Report the gap honestly.</strong> <em>unknown</em> is verifier
+        incompleteness; only a reachable violation counts, and it must survive the
+        reachability gate.</li>
+    </ol>
+  </section>
+
+  <section class="section">
+    <h2 class="title">Status and reproducibility</h2>
+    <ul>
+      <li>The audit pipeline runs end to end on <strong>CPU</strong> (the smoke
+        run above, ~2 minutes).</li>
+      <li>The failure atlas is reproducible on CPU with fixed seeds; CPU
+        reproduction of the documented signatures is in progress at this draft's
+        time.</li>
+      <li>The trained-model heavy run is a turnkey Colab notebook: train size-1M
+        on dm_control cartpole_balance from pixels, export the JAX weights under
+        the upstream key names, roll out the on-policy latent support, run the
+        audit, and produce <code>results/d1_seed0.json</code> as the artifact.</li>
+      <li>Everything is pinned: the dreamerv3 commit (whose vendored
+        <code>embodied</code> is the exact math the torch port transcribes),
+        the verifier (auto_LiRPA 0.7.2 at its validated commit, plus the
+        SHA-256 of the driver), and the sources of every number.</li>
+    </ul>
+    <p class="faint">
+      Honest reading of the heavy run: sampling-clean + branch-and-bound
+      <em>unknown</em> on the categorical wall is a null result — verifier
+      incompleteness, not a gap, and not email material on its own. Only a
+      sampling violation that survives the reachability gate counts.
+    </p>
+  </section>
+
+  <section class="section">
+    <h2 class="title">Citation</h2>
+    <div class="panel" style="font-family:'IBM Plex Mono',monospace; font-size:0.82rem; line-height:1.6;">
+@article{dreamerv3latentstability2026,<br>
+&nbsp;&nbsp;author = {Singh, Sehaj Randhir},<br>
+&nbsp;&nbsp;title = {Stable and Verifiable Latent Dynamics for World Models},<br>
+&nbsp;&nbsp;year = {2026},<br>
+}
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="container">
+    Sehaj Randhir Singh · Independent researcher; partial affiliation with NYU Tandon School of Engineering<br>
+    <a href="https://github.com/sehajr-singhs/dreamerv3-latent-stability">github.com/sehajr-singhs/dreamerv3-latent-stability</a>
+  </div>
+</footer>
+
+</body>
+</html>

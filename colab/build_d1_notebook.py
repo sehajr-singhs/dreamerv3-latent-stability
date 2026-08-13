@@ -24,7 +24,7 @@ import json
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO_URL = "https://github.com/sehajr-singhs/rl-wm-audit"
+REPO_URL = "https://github.com/sehajr-singhs/dreamerv3-latent-stability"
 CNL_URL = "https://github.com/sehajr-singhs/certified-neural-lyapunov"
 DREAMERV3_URL = "https://github.com/danijar/dreamerv3"
 DREAMERV3_COMMIT = "e3f02248693a79dc8b0ebd62c93683888ddaccfe"
@@ -96,8 +96,8 @@ cells = [
        "`embodied` library it trains with -- that vendored `nets.py` is the exact",
        "math the torch port (`src/dreamer.py`) transcribes, so training with the",
        "pinned commit makes the port and the trained model the same function by",
-       "construction. `rl-wm-audit` is public; a clone is the primary path (a zip",
-       "upload of a local working tree remains the fallback). `cnl-work` is",
+       "construction. `dreamerv3-latent-stability` is public; a clone is the primary",
+       "path (a zip upload of a local working tree remains the fallback). `cnl-work` is",
        "published; a clone is fine, and the verifier is pinned by the SHA-256 of",
        "`src/verify.py`."),
 

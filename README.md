@@ -1,6 +1,11 @@
-# RL World-Model Verification Audit
+# DreamerV3 Latent Stability
 
-Applying a certified-Lyapunov verification toolchain to open-source RL, to measure the
+**Papers:** [Stable and Verifiable Latent Dynamics for World Models](docs/papers/DREAMER_LATENT_STABILITY_IEEE.pdf)
+(IEEE format) · [same, NMI Letters format](docs/papers/DREAMER_LATENT_STABILITY_NMI.pdf) ·
+[project website](https://sehajr-singhs.github.io/dreamerv3-latent-stability/).
+
+The DreamerV3 leg of the RL world-model verification audit. Applying a
+certified-Lyapunov verification toolchain to open-source RL, to measure the
 **sampling-to-proof gap**: states where a large random-sampling audit of a safety or
 decrease condition finds nothing, but directed formal search (CROWN branch-and-bound)
 finds a genuine violation.
