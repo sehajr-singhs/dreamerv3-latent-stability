@@ -435,7 +435,8 @@ branch-and-bound loop runs with per-box verdicts.
 ### Turnkey Colab notebook (`colab/d1_audit.ipynb`, built by `colab/build_d1_notebook.py`)
 
 The heavy run is a notebook now, generated from the builder (edit the builder, not
-the JSON). It: pins sources (rl-wm-audit zip upload; dreamerv3 @ e3f0224 with its
+the JSON). It: pins sources (rl-wm-audit clone -- the repo is public; zip upload
+remains a fallback; dreamerv3 @ e3f0224 with its
 VENDORED embodied -- the exact nets.py the port transcribed, verified; cnl-work
 with the verify.py SHA-256 pin), installs jax[cuda12]==0.4.33 + numpy<2 +
 dm_control + auto_LiRPA on Colab GPU, runs the gates, trains size1m on
