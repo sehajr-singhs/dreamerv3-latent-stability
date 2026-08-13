@@ -384,9 +384,10 @@
     <ul>
       <li>The audit pipeline runs end to end on <strong>CPU</strong> (the smoke
         run above, ~2 minutes).</li>
-      <li>The failure atlas is reproducible on CPU with fixed seeds; CPU
-        reproduction of the documented signatures is in progress at this draft's
-        time.</li>
+      <li>The failure atlas is <strong>reproduced on CPU</strong> (single seed,
+        250-step schedule, 2026-08-13): every documented mode reappears with its
+        own numbers (table below; full record in
+        <code>results/atlas_reproduction_cpu.md</code>).</li>
       <li>The trained-model heavy run is a turnkey Colab notebook: train size-1M
         on dm_control cartpole_balance from pixels, export the JAX weights under
         the upstream key names, roll out the on-policy latent support, run the
@@ -396,6 +397,19 @@
         the verifier (auto_LiRPA 0.7.2 at its validated commit, plus the
         SHA-256 of the driver), and the sources of every number.</li>
     </ul>
+    <table>
+      <thead>
+        <tr><th>Verified CPU reproduction (reference: λ₁ = +0.884, div f = −13.667)</th><th></th><th></th><th></th><th></th></tr>
+        <tr><th>Arm</th><th>mratio</th><th>λ₁</th><th>contract</th><th>tr(R)/n</th><th>Chamfer</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>B unconstrained</td><td>538.7</td><td>+26.570</td><td>−18.370</td><td>—</td><td>8923.6</td></tr>
+        <tr><td>C rigid Hamiltonian</td><td>0.005</td><td>+0.001</td><td>+0.008</td><td>—</td><td>3.50</td></tr>
+        <tr><td>D naive metriplectic</td><td>0.814</td><td>+0.711</td><td>−0.514</td><td>0.0000</td><td>4.42</td></tr>
+        <tr><td>E fixed metriplectic</td><td>1.559</td><td>+2.244</td><td>−13.651</td><td>4.18</td><td>22.34</td></tr>
+        <tr><td>F spectral aligned</td><td>1.928</td><td>+2.831</td><td>−13.557</td><td>4.45</td><td>24.43</td></tr>
+      </tbody>
+    </table>
     <p class="faint">
       Honest reading of the heavy run: sampling-clean + branch-and-bound
       <em>unknown</em> on the categorical wall is a null result — verifier
