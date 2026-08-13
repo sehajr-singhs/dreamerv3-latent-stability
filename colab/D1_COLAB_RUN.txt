@@ -1,0 +1,52 @@
+DREAMERV3 LATENT STABILITY -- COLAB HEAVY RUN
+=============================================
+Repo: github.com/sehajr-singhs/dreamerv3-latent-stability (public)
+Site: sehajr-singhs.github.io/dreamerv3-latent-stability/
+Notebook: colab/d1_audit.ipynb  (24 cells, clone-based)
+
+WHAT THIS RUN PRODUCES (everything the IEEE/NMI papers need)
+------------------------------------------------------------
+  results/d1_seed0.json            -- the artifact (the only thing to quote)
+  results/paper_numbers.md         -- every measured quantity the Results quote
+  results/fig_sampling_conditions.png -- sampling-baseline condition histogram
+  artifacts/d1_weights.npz         -- exported JAX params (upstream key names)
+  artifacts/d1_support.npz         -- on-policy posterior latent support
+  artifacts/d1_weights_meta.json   -- export provenance sidecar
+
+STEPS
+-----
+1. Runtime -> Change runtime type -> T4 GPU. (The install cell asserts GPU.)
+2. Open colab/d1_audit.ipynb in Colab and run cells IN ORDER.
+3. Cell 1 clones the public repo (no zip upload needed). dreamerv3 is pinned
+   at commit e3f0224; cnl-work cloned; verifier pinned by verify.py SHA-256
+   8c1505c4...
+4. Cell 2 installs: dreamerv3 requirements (jax[cuda12]==0.4.33, numpy<2),
+   dm_control, and auto_LiRPA 0.7.2 from GitHub commit 5a098e8f with
+   --ignore-requires-python (the only install that compiles C++; a few
+   minutes). Ends with "OK: auto_LiRPA 0.7.2 @ 5a098e8f". torch must print
+   +cu12x (not +cpu).
+5. Cell 3 gates: d1_smoke.py + 22 transcription tests. Must print green;
+   stop if not, and bring the traceback home.
+6. Cell 4 trains size1m on dmc_cartpole_balance from pixels (~1.5-3 h on a
+   T4). Checkpoints land in /content/d1_logdir; a runtime reset wipes them
+   (keep the tab open). Rerunning the cell resumes via ckpt/latest.
+7. Cells 5-8: export weights, roll out the on-policy latent support, load
+   check, run the audit (--n-samples 500000 --v-steps 4000, wall-gated BaB).
+   The audit prints the three-way verdicts and writes the artifact + conds.
+8. Cell 9: honest reading of the artifact.
+9. Cell 10: paper-readiness bundle -- paper_numbers.md, the condition
+   histogram, and downloads of all three artifacts.
+
+READING THE RESULT (the whole point)
+------------------------------------
+- sampling 0/N + every BaB box "unknown" = a NULL result: the categorical
+  output is the documented verifier wall (category-3 incompleteness). It is
+  NEVER a gap, never a partial finding, never evidence of safety.
+- gap_demonstrated is True ONLY if sampling found nothing AND branch-and-
+  bound found a violation the model demonstrably reaches (reachability
+  gate). That is the only outcome that is a result.
+- Quote only results/d1_seed0.json. Unknown verdicts are expected and are
+  exactly what the manuscripts' "measured wall" section describes.
+
+TIME BUDGET: env+install ~10 min, gates ~5 min, training ~1.5-3 h,
+export/rollout ~15 min, audit ~10-20 min.
