@@ -157,13 +157,17 @@ def train_latent_V(closed_loop, support, lo, hi, hole_lo, hole_hi, z_star, *,
 @torch.no_grad()
 def sampled_latent_violation_rate(cond, lo, hi, hole_lo, hole_hi, support,
                                   n=500_000, seed=123, chunk=50_000,
-                                  frac_on_policy=0.5):
-    """Empirical violation rate over the latent region; the sampling baseline."""
+                                  frac_on_policy=0.5, return_conds=False):
+    """Empirical violation rate over the latent region; the sampling baseline.
+    With return_conds=True the dict also carries the raw condition values
+    (as a float32 array) for plotting; callers that persist JSON must pop it.
+    """
     rng = np.random.default_rng(seed)
     chunk = min(chunk, n)
     n_viol, n_seen = 0, 0
     worst = float("inf")
     worst_z = None
+    conds = [] if return_conds else None
     for _ in range(0, n, chunk):
         z = sample_latent_states(chunk, lo, hi, support, hole_lo, hole_hi,
                                  frac_on_policy=frac_on_policy, rng=rng)
@@ -174,6 +178,11 @@ def sampled_latent_violation_rate(cond, lo, hi, hole_lo, hole_hi, support,
         if float(v[m]) < worst:
             worst = float(v[m])
             worst_z = z[m].cpu().numpy().tolist()
-    return dict(n_sampled=n_seen, n_violations=n_viol,
-                violation_rate=n_viol / max(n_seen, 1),
-                worst_cond=worst, worst_state=worst_z)
+        if return_conds:
+            conds.append(v.detach().cpu().numpy())
+    out = dict(n_sampled=n_seen, n_violations=n_viol,
+               violation_rate=n_viol / max(n_seen, 1),
+               worst_cond=worst, worst_state=worst_z)
+    if return_conds:
+        out["conds"] = np.concatenate(conds)
+    return out

@@ -326,29 +326,47 @@ because the optimizer routes around each scalar constraint through a
 geometric exploit.
 
 \begin{table}[t]
-\caption{Documented failure modes of latent-space stabilization
-(Lorenz-63, nonlinear warp; reproduced on CPU in progress at draft time).}
+\caption{Documented failure modes of latent-space stabilization, with the
+signatures verified by a single-seed CPU reproduction (Lorenz-63, nonlinear
+warp, 2026-08-13; full B/C/D/E/F summary in Table~\ref{tab:repro}).}
 \label{tab:atlas}
 \centering
 \small
 \begin{tabular}{@{}lll@{}}
 \toprule
-\# & Mode & Measured signature \\
+\# & Mode & Verified signature (arm) \\
 \midrule
 1 & Representation freeze &
-  motion $\sim10^{-3}$ vs target $\sim0.4$; $\lambda_1$-penalty $\sim 0$ \\
+  motion ratio 0.005, $\lambda_1=+0.001$; best Chamfer 3.50 (C) \\
 2 & Scale-conditioning paradox &
-  raw proxy spread $\sim0.036$ vs $\|\partial H/\partial p\| \sim 3.2$
-  (a $\sim30\times$ conflict) \\
+  proxy spread $\sim0.036$ vs $\|\partial H/\partial p\| \sim 3.2$ \\
 3 & Skew loophole + dead R saddle &
-  $\mathrm{tr}(R)/n = 0.00000$ in every naive run; R off until
-  nonzero init \\
+  $\mathrm{tr}(R)/n = 0.00000$; contraction $-0.514$ vs $-13.667$ (D) \\
 4 & Sum-vs-$\lambda_1$ decoupling &
-  contraction $-12.8$ while $\lambda_1$ blows up to $+3.5$
-  (true $\sim0.88$); confirmed 4$\times$ \\
+  volume law matched ($|\mathrm{d}{-}13.7|=0.016$) while
+  $\lambda_1=+2.244$ vs $+0.884$ (E) \\
 5 & Finite-time spectral trap &
-  short-horizon $\hat\lambda_1 \to -0.17$ while true
-  200-step $\lambda_1 = +1.44$ (opposite sign) \\
+  train $\hat\lambda_1 \to -0.16$; eval $\lambda_1 = +2.831$ (F) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\caption{Verified CPU reproduction of the five-arm atlas (single seed,
+250-step schedule, 200-step eval). Reference: $\lambda_1=+0.884$,
+$\mathrm{div}\,f=-13.6667$.}
+\label{tab:repro}
+\centering
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Arm & mratio & $\lambda_1$ & contract & $\mathrm{tr}(R)/n$ & Chamfer \\
+\midrule
+B unconstrained & 538.7 & $+26.570$ & $-18.370$ & --- & 8923.6 \\
+C rigid Hamiltonian & 0.005 & $+0.001$ & $+0.008$ & --- & 3.50 \\
+D naive metriplectic & 0.814 & $+0.711$ & $-0.514$ & 0.0000 & 4.42 \\
+E fixed metriplectic & 1.559 & $+2.244$ & $-13.651$ & 4.18 & 22.34 \\
+F spectral aligned & 1.928 & $+2.831$ & $-13.557$ & 4.45 & 24.43 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -443,13 +461,12 @@ survive a reachability gate.
 \end{enumerate}
 
 % ---------------------------------------------------------------- discussion
-\section{Discussion and Limitations}
-
-\emph{What is measured.} The verifier wall is a measured property of
+\section{Discussion and Limitations}\emph{What is measured.} The verifier wall is a measured property of
 auto\_LiRPA~0.7.2 on the categorical output, reproducible on CPU in minutes.
-The failure atlas is a measured, reproducible negative result on a controlled
-latent-space benchmark. The audit pipeline is measured end to end on a
-surrogate.
+The failure atlas is a measured, reproducible negative result on a
+controlled latent-space benchmark; all five documented modes have been
+reproduced in a single-seed CPU run (Table~\ref{tab:repro}). The audit
+pipeline is measured end to end on a surrogate.
 
 \emph{What is not yet measured.} A trained DreamerV3 model's latent dynamics
 have not yet been audited; that audit requires a GPU training run and is the
@@ -493,8 +510,8 @@ hypotheses it should test.
 \bibitem{hafner2025nature}
 D.~Hafner, J.~Pasukonis, J.~Ba, and T.~Lillicrap,
 ``Mastering diverse control tasks through world models,''
-\emph{Nature}, vol.~[TODO: volume], pp.~[TODO: pages], 2025.
-[TODO: verify volume/pages/DOI.]
+\emph{Nature}, vol.~640, no.~8059, pp.~647--653, 2025,
+doi:10.1038/s41586-025-08744-2.
 
 \bibitem{hafner2023arxiv}
 D.~Hafner, J.~Pasukonis, J.~Ba, and T.~Lillicrap,

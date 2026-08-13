@@ -135,7 +135,7 @@ def run(cfg=None, action_dim=6, weights_npz=None, support_npz=None, *,
         seed=0, n_samples=500_000, v_steps=4000, v_batch=4096,
         quantile=0.99, hole=0.10, hole_k=4, time_budget=120.0,
         method="CROWN", min_width=1e-3, n_episodes=2000, horizon=200,
-        burn_in=100, synthetic=False, out=None):
+        burn_in=100, synthetic=False, out=None, dump_conds=None):
     t_start = time.time()
     # The heavy run belongs on a GPU: everything the audit builds (model, V,
     # verifier boxes) follows torch's default device, so set it once here. Local
@@ -271,7 +271,10 @@ def run(cfg=None, action_dim=6, weights_npz=None, support_npz=None, *,
     # --------------------------------------------------- sampling-only audit
     print(f"sampling audit ({n_samples} latent states) ...")
     samp = sampled_latent_violation_rate(cond, lo, hi, hole_lo, hole_hi, zs,
-                                         n=n_samples, seed=seed + 999)
+                                         n=n_samples, seed=seed + 999,
+                                         return_conds=dump_conds is not None)
+    if dump_conds and "conds" in samp:
+        np.save(dump_conds, samp.pop("conds"))  # keep the JSON artifact clean
     log["sampling"] = samp
     print(f"sampling: {samp['n_violations']}/{samp['n_sampled']} violations "
           f"({samp['violation_rate']:.3%}), worst cond {samp['worst_cond']:.3e}")
@@ -424,6 +427,8 @@ if __name__ == "__main__":
     p.add_argument("--burn-in", type=int, default=100,
                    help="episodes to drop from the support before building the region")
     p.add_argument("--time-budget", type=float, default=120.0)
+    p.add_argument("--dump-conds", default=None,
+                   help="npy path for the raw sampling condition values (paper figure)")
     p.add_argument("--method", default="CROWN",
                    help="plain CROWN by default; same reasoning as A1 (E10 measured "
                         "CROWN-Optimized as WORSE on product nodes).")
@@ -439,9 +444,11 @@ if __name__ == "__main__":
         run(seed=a.seed, n_samples=20_000, v_steps=20, v_batch=256,
             time_budget=10.0, hole_k=2, n_episodes=60, horizon=30,
             burn_in=15, synthetic=True,
-            out=os.path.join(ROOT, "results", f"d1_quick_seed{a.seed}.json"))
+            out=os.path.join(ROOT, "results", f"d1_quick_seed{a.seed}.json"),
+            dump_conds=a.dump_conds)
     else:
         run(weights_npz=a.weights, support_npz=a.support, seed=a.seed,
             action_dim=a.action_dim, n_samples=a.n_samples, v_steps=a.v_steps,
             v_batch=a.v_batch, hole_k=a.hole_k, burn_in=a.burn_in,
-            time_budget=a.time_budget, method=a.method, synthetic=a.synthetic)
+            time_budget=a.time_budget, method=a.method, synthetic=a.synthetic,
+            dump_conds=a.dump_conds)

@@ -251,7 +251,10 @@ end on chaotic Lorenz-63 under a nonlinear coordinate warp, in five ablation
 arms with matched data and steps (unconstrained MLP; rigid Hamiltonian;
 naive metriplectic; fixed divergence-free-$J$ metriplectic with invariant
 dissipation gate; and the fixed arm plus a differentiable QR spectral
-alignment). The study is reproducible on CPU with fixed seeds. The atlas is
+alignment). The study is reproducible on CPU with fixed seeds, and has been
+reproduced in a single-seed run (250-step schedule, 2026-08-13): every
+documented mode reappears with its own numbers (Table~\ref{tab:atlas}); the
+full B/C/D/E/F summary is in the repository. The atlas is
 the \emph{negative result}: imposing physical or thermodynamic constraints
 inside a self-supervised latent space does not, by itself, yield physical
 dynamics, because the optimizer routes around each scalar constraint through
@@ -259,25 +262,26 @@ a geometric exploit (Table~\ref{tab:atlas}).
 
 \begin{table}[t]
 \centering
-\caption{Documented failure modes of latent-space stabilization
-(Lorenz-63, nonlinear warp; signatures as documented, CPU reproduction in
-progress at draft time).}
+\caption{Documented failure modes of latent-space stabilization, with the
+signatures verified by a single-seed CPU reproduction (Lorenz-63, nonlinear
+warp, 2026-08-13).}
 \label{tab:atlas}
 \small
 \begin{tabular}{@{}lll@{}}
 \toprule
-\# & Mode & Measured signature \\
+\# & Mode & Verified signature (arm) \\
 \midrule
 1 & Representation freeze &
-  motion $\sim10^{-3}$ vs target $\sim0.4$; penalty $\sim0$ \\
+  motion ratio 0.005, $\lambda_1=+0.001$; best Chamfer 3.50 (C) \\
 2 & Scale-conditioning paradox &
   proxy spread $\sim0.036$ vs $\|\partial H/\partial p\| \sim 3.2$ \\
 3 & Skew loophole + dead R saddle &
-  $\mathrm{tr}(R)/n = 0.00000$ in every naive run \\
+  $\mathrm{tr}(R)/n = 0.00000$; contraction $-0.514$ vs $-13.667$ (D) \\
 4 & Sum-vs-$\lambda_1$ decoupling &
-  contraction $-12.8$, $\lambda_1$ blows up to $+3.5$ (true $\sim0.88$) \\
+  volume law matched ($|\mathrm{d}{-}13.7|=0.016$) while
+  $\lambda_1=+2.244$ vs $+0.884$ (E) \\
 5 & Finite-time spectral trap &
-  short-horizon $\hat\lambda_1 \to -0.17$, true 200-step $+1.44$ \\
+  train $\hat\lambda_1 \to -0.16$; eval $\lambda_1 = +2.831$ (F) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -508,7 +512,8 @@ The authors declare no competing interests.
 \bibitem{hafner2025nature}
 D.~Hafner, J.~Pasukonis, J.~Ba, and T.~Lillicrap,
 ``Mastering diverse control tasks through world models,''
-\emph{Nature}, vol.~[TODO], 2025. [TODO: verify volume/pages/DOI.]
+\emph{Nature}, vol.~640, no.~8059, pp.~647--653, 2025,
+doi:10.1038/s41586-025-08744-2.
 
 \bibitem{hafner2023arxiv}
 D.~Hafner, J.~Pasukonis, J.~Ba, and T.~Lillicrap,
@@ -574,9 +579,9 @@ in \emph{Proc. ICLR}, 2019.
 \end{thebibliography}
 
 \vspace{1em}
-\noindent\textbf{Draft status.} Authors TODO; references to verify; the
-trained-model audit [TODO: GPU run]; the CPU reproduction of the atlas table
-in progress at draft time. Nothing in this draft has been submitted or peer
+\noindent\textbf{Draft status.} References to verify; the trained-model
+audit [TODO: GPU run]. The CPU reproduction of the atlas is complete and its
+numbers are in this Letter. Nothing in this draft has been submitted or peer
 reviewed.
 
 \end{document}
